@@ -1,0 +1,45 @@
+{
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+        "@typescript-eslint",
+        "prettier"
+    ],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/eslint-recommended",
+        "plugin:@typescript-eslint/recommended" //,
+        //"prettier/@typescript-eslint",
+        //"plugin:prettier/recommended"
+    ],
+    "rules": {
+        "prettier/prettier": "error",
+        "no-irregular-whitespace": [
+            "error",
+            {
+                "skipTemplates": true
+            }
+        ],
+        "@typescript-eslint/no-unused-vars": [
+            "error",
+            {
+                "varsIgnorePattern": "^_|^toString$",
+                "argsIgnorePattern": "^_"
+            }
+        ],
+        "no-cond-assign": 2,
+        "no-constant-condition": 0,
+        "no-inner-declarations": 2,
+        "no-prototype-builtins": 0,
+        "@typescript-eslint/no-explicit-any": 0,
+        "@typescript-eslint/no-non-null-assertion": 0,
+        "@typescript-eslint/ban-types": 0
+    },
+    "ignorePatterns": [
+        "node_modules/",
+        "out/",
+        "coverage/",
+        "resources/",
+        ".vscode/"
+    ]
+}

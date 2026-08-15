@@ -1,0 +1,58 @@
+name: Fossil
+
+on:
+  push:
+    branches: [ "master" ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  main:
+    name: Run Fossil Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+          node-version: 18
+      - name: Install dependencies
+        run: npm ci
+      - name: Run ESLint
+        run: npm run lint --
+          --format @microsoft/eslint-formatter-sarif
+          --output-file eslint-results.sarif
+        continue-on-error: true
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
+
+      - name: Install fossil
+        # we need 'xvfb libnss3-dev libgtk-3-dev libasound2'
+        # when running locally using `gh act` command
+        run: sudo apt-get install -y fossil
+
+      - name: Run code tests and coverage
+        run: xvfb-run -a npm run coverage-ci $GITHUB_STEP_SUMMARY
+
+      - name: Run pikchr grammar tests
+        run: npm run grammar-test
+
+      - name: Package
+        run: rm -rf out && npm run package
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: fossil-*.*.*.vsix

@@ -1,0 +1,16 @@
+.github/
+.mocharc.js
+esbuild.config.js
+.nycrc
+.vscode
+**/.gitignore
+**/*.map
+**/*.ts
+**/tsconfig.json
+coverage/
+docs/
+images/
+node_modules
+src/
+pikchr/test/*
+pikchr/*.py

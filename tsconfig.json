@@ -1,0 +1,27 @@
+{
+    "compileOnSave": true,
+    "compilerOptions": {
+        "target": "es2020",
+        "lib": [
+            "es2020"
+        ],
+        "noImplicitOverride": true,
+        "noImplicitThis": true,
+        "module": "commonjs",
+        "outDir": "out",
+        "strict": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        //"noUnusedParameters": true,
+        "removeComments": true,
+        "sourceMap": true,
+        "strictNullChecks": true,
+        "experimentalDecorators": true,
+    },
+    "include": [
+        "src/**/*",
+    ],
+    "references": [
+        {"path": "./media"}
+    ]
+}

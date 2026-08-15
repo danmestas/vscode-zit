@@ -1,0 +1,1222 @@
+{
+    "name": "fossil",
+    "publisher": "koog1000",
+    "displayName": "Fossil",
+    "description": "Integrated Fossil source control",
+    "galleryBanner": {
+        "color": "#999999",
+        "theme": "dark"
+    },
+    "homepage": "https://github.com/koog1000/vscode-fossil",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/koog1000/vscode-fossil.git"
+    },
+    "bugs": {
+        "url": "https://github.com/koog1000/vscode-fossil/issues"
+    },
+    "version": "0.7.6",
+    "engines": {
+        "vscode": "^1.36.0"
+    },
+    "keywords": [
+        "fossil-scm",
+        "fossil",
+        "source",
+        "scm"
+    ],
+    "icon": "icon.png",
+    "categories": [
+        "SCM Providers",
+        "Other"
+    ],
+    "activationEvents": [
+        "*"
+    ],
+    "main": "./out/main",
+    "contributes": {
+        "commands": [
+            {
+                "command": "fossil.add",
+                "title": "%command.add%",
+                "category": "Fossil",
+                "icon": "$(plus)"
+            },
+            {
+                "command": "fossil.addAll",
+                "title": "%command.addAll%",
+                "category": "Fossil",
+                "icon": "$(plus)"
+            },
+            {
+                "command": "fossil.ignore",
+                "title": "%command.ignore%",
+                "category": "Fossil",
+                "icon": "$(discard)"
+            },
+            {
+                "command": "fossil.branch",
+                "title": "%command.branch%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.clean",
+                "title": "%command.clean%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.revert",
+                "title": "%command.revert%",
+                "category": "Fossil",
+                "icon": "$(discard)"
+            },
+            {
+                "command": "fossil.revertAll",
+                "title": "%command.revertAll%",
+                "category": "Fossil",
+                "icon": "$(discard)"
+            },
+            {
+                "command": "fossil.commit",
+                "title": "%command.commit%",
+                "category": "Fossil",
+                "icon": "$(check)"
+            },
+            {
+                "command": "fossil.deleteFiles",
+                "title": "Delete All Untracked Files",
+                "category": "Fossil",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "fossil.deleteFile",
+                "title": "Delete Untracked File",
+                "category": "Fossil",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "fossil.commitAll",
+                "title": "%command.commitAll%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.commitStaged",
+                "title": "%command.commitStaged%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.commitBranch",
+                "title": "%command.commitBranch%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.clone",
+                "title": "%command.clone%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.fileLog",
+                "title": "%command.fileLog%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.render",
+                "title": "%command.render%",
+                "category": "Fossil",
+                "icon": "$(open-preview)"
+            },
+            {
+                "command": "fossil.wikiCreate",
+                "title": "%command.wikiCreate%",
+                "category": "Fossil",
+                "icon": "$(cloud-upload)"
+            },
+            {
+                "command": "fossil.forget",
+                "title": "%command.forget%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.relocate",
+                "title": "%command.relocate%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.init",
+                "title": "%command.init%",
+                "category": "Fossil",
+                "icon": {
+                    "light": "icon.png",
+                    "dark": "icon.png"
+                }
+            },
+            {
+                "command": "fossil.open",
+                "title": "%command.open%",
+                "category": "Fossil",
+                "icon": {
+                    "light": "icon.png",
+                    "dark": "icon.png"
+                }
+            },
+            {
+                "command": "fossil.close",
+                "title": "%command.close%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.closeBranch",
+                "title": "Close branch...",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.log",
+                "title": "%command.log%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.openChange",
+                "title": "%command.openChange%",
+                "category": "Fossil",
+                "icon": {
+                    "light": "resources/icons/light/open-change.svg",
+                    "dark": "resources/icons/dark/open-change.svg"
+                }
+            },
+            {
+                "command": "fossil.openChangeFromUri",
+                "title": "%command.openChange%",
+                "category": "Fossil",
+                "icon": {
+                    "light": "resources/icons/light/open-change.svg",
+                    "dark": "resources/icons/dark/open-change.svg"
+                }
+            },
+            {
+                "command": "fossil.openFile",
+                "title": "%command.openFile%",
+                "category": "Fossil",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "fossil.openFiles",
+                "title": "%command.openFiles%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.openFileFromUri",
+                "title": "%command.openFile%",
+                "category": "Fossil",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "fossil.openUI",
+                "title": "%command.openUI%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.update",
+                "title": "%command.update%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.pull",
+                "title": "%command.pull%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.push",
+                "title": "%command.push%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.pushTo",
+                "title": "%command.pushTo%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.refresh",
+                "title": "%command.refresh%",
+                "category": "Fossil",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "fossil.reopenBranch",
+                "title": "Reopen branch...",
+                "category": "Fossil",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "fossil.showOutput",
+                "title": "%command.showOutput%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stage",
+                "title": "%command.stage%",
+                "category": "Fossil",
+                "icon": "$(plus)"
+            },
+            {
+                "command": "fossil.stageAll",
+                "title": "%command.stageAll%",
+                "category": "Fossil",
+                "icon": "$(plus)"
+            },
+            {
+                "command": "fossil.sync",
+                "title": "%command.sync%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.undo",
+                "title": "%command.undo%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.redo",
+                "title": "%command.redo%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.unstage",
+                "title": "%command.unstage%",
+                "category": "Fossil",
+                "icon": "$(remove)"
+            },
+            {
+                "command": "fossil.unstageAll",
+                "title": "%command.unstageAll%",
+                "category": "Fossil",
+                "icon": "$(remove)"
+            },
+            {
+                "command": "fossil.branchChange",
+                "title": "%command.branchChange%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.revertChange",
+                "title": "Revert Change",
+                "category": "Fossil",
+                "icon": "$(discard)"
+            },
+            {
+                "command": "fossil.merge",
+                "title": "%command.merge%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.integrate",
+                "title": "%command.integrate%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.cherrypick",
+                "title": "%command.cherrypick%",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.patchCreate",
+                "title": "Create Patch",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.patchApply",
+                "title": "Apply Patch",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stashSnapshot",
+                "title": "Stash Snapshot",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stashSave",
+                "title": "Stash Push",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stashPop",
+                "title": "Stash Pop",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stashApply",
+                "title": "Stash Apply",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.stashDrop",
+                "title": "Stash Drop",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.praise",
+                "title": "Praise (blame)",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.gitPublish",
+                "title": "Publish to GitHub/Git",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.gitExport",
+                "title": "Export git",
+                "category": "Fossil"
+            },
+            {
+                "command": "fossil.renderSave",
+                "title": "Save As...",
+                "category": "Fossil",
+                "icon": "$(save-as)"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "fossil.clone",
+                    "when": "fossil.found"
+                },
+                {
+                    "command": "fossil.init",
+                    "when": "fossil.found"
+                },
+                {
+                    "command": "fossil.openUI",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.refresh",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.openChange",
+                    "when": "false"
+                },
+                {
+                    "command": "fossil.openFile",
+                    "when": "false"
+                },
+                {
+                    "command": "fossil.openFiles",
+                    "when": "false"
+                },
+                {
+                    "command": "fossil.openChangeFromUri",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.openFileFromUri",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stageAll",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.unstage",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.unstageAll",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.revert",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.revertAll",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.commit",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.commitStaged",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.commitAll",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.commitBranch",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.undo",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.redo",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.branchChange",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.branch",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.pull",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.update",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.push",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.pushTo",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.merge",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.integrate",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.cherrypick",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.showOutput",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.fileLog",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.log",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.patchApply",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.patchCreate",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stashApply",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stashDrop",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stashPop",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stashSave",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.stashSnapshot",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.clean",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.add",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.addAll",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.ignore",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.close",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.closeBranch",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.forget",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.relocate",
+                    "when": "false"
+                },
+                {
+                    "command": "fossil.revertChange",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.reopenBranch",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.wikiCreate",
+                    "when": "fossilOpenRepositoryCount && activeWebviewPanelId == fossil.renderPanel"
+                },
+                {
+                    "command": "fossil.render",
+                    "when": "fossil.found && resourcePath"
+                },
+                {
+                    "command": "fossil.deleteFiles",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.deleteFile",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.praise",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.gitPublish",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.gitExport",
+                    "when": "fossilOpenRepositoryCount"
+                },
+                {
+                    "command": "fossil.open",
+                    "when": "fossil.found"
+                }
+            ],
+            "scm/title": [
+                {
+                    "command": "fossil.init",
+                    "group": "navigation",
+                    "when": "fossil.found && !scmProvider && fossilOpenRepositoryCount == 0"
+                },
+                {
+                    "command": "fossil.open",
+                    "group": "9_open",
+                    "when": "fossil.found && !scmProvider && fossilOpenRepositoryCount == 0"
+                },
+                {
+                    "command": "fossil.clone",
+                    "when": "fossil.found",
+                    "group": "9_open"
+                },
+                {
+                    "command": "fossil.commit",
+                    "group": "navigation",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.refresh",
+                    "group": "navigation",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.update",
+                    "group": "1_sync@1",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.sync",
+                    "group": "1_sync@2",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.pull",
+                    "group": "1_sync@3",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.push",
+                    "group": "1_sync@4",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.pushTo",
+                    "group": "1_sync@5",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.undo",
+                    "group": "3_commit@0",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.redo",
+                    "group": "3_commit@1",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "submenu": "fossil.commit",
+                    "when": "scmProvider == fossil",
+                    "group": "5_groups@0"
+                },
+                {
+                    "submenu": "fossil.merge",
+                    "when": "scmProvider == fossil",
+                    "group": "5_groups@1"
+                },
+                {
+                    "submenu": "fossil.stash",
+                    "when": "scmProvider == fossil",
+                    "group": "5_groups@2"
+                },
+                {
+                    "submenu": "fossil.timeline",
+                    "when": "scmProvider == fossil",
+                    "group": "5_groups@3"
+                },
+                {
+                    "submenu": "fossil.patch",
+                    "when": "scmProvider == fossil",
+                    "group": "5_groups@4"
+                },
+                {
+                    "command": "fossil.showOutput",
+                    "group": "6_output",
+                    "when": "scmProvider == fossil"
+                }
+            ],
+            "fossil.commit": [
+                {
+                    "command": "fossil.commitStaged",
+                    "group": "commit@0",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.commitAll",
+                    "group": "commit@1",
+                    "when": "scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.commitBranch",
+                    "group": "commit@2",
+                    "when": "scmProvider == fossil"
+                }
+            ],
+            "fossil.merge": [
+                {
+                    "command": "fossil.merge",
+                    "when": "scmProvider == fossil",
+                    "group": "merge@0"
+                },
+                {
+                    "command": "fossil.integrate",
+                    "when": "scmProvider == fossil",
+                    "group": "merge@1"
+                },
+                {
+                    "command": "fossil.cherrypick",
+                    "when": "scmProvider == fossil",
+                    "group": "merge@2"
+                }
+            ],
+            "fossil.timeline": [
+                {
+                    "command": "fossil.log",
+                    "when": "scmProvider == fossil",
+                    "group": "log@0"
+                },
+                {
+                    "command": "fossil.fileLog",
+                    "when": "scmProvider == fossil",
+                    "group": "log@1"
+                }
+            ],
+            "fossil.patch": [
+                {
+                    "command": "fossil.patchCreate",
+                    "when": "scmProvider == fossil",
+                    "group": "patch@0"
+                },
+                {
+                    "command": "fossil.patchApply",
+                    "when": "scmProvider == fossil",
+                    "group": "patch@1"
+                }
+            ],
+            "fossil.stash": [
+                {
+                    "command": "fossil.stashSnapshot",
+                    "when": "scmProvider == fossil",
+                    "group": "stash@0"
+                },
+                {
+                    "command": "fossil.stashSave",
+                    "when": "scmProvider == fossil",
+                    "group": "stash@1"
+                },
+                {
+                    "command": "fossil.stashPop",
+                    "when": "scmProvider == fossil",
+                    "group": "stash@2"
+                },
+                {
+                    "command": "fossil.stashApply",
+                    "when": "scmProvider == fossil",
+                    "group": "stash@3"
+                },
+                {
+                    "command": "fossil.stashDrop",
+                    "when": "scmProvider == fossil",
+                    "group": "stash@4"
+                }
+            ],
+            "scm/change/title": [
+                {
+                    "command": "fossil.revertChange",
+                    "when": "fossil.found && originalResourceScheme == fossil"
+                }
+            ],
+            "scm/sourceControl": [
+                {
+                    "command": "fossil.close",
+                    "group": "navigation",
+                    "when": "fossil.found && scmProvider == fossil"
+                }
+            ],
+            "scm/resourceGroup/context": [
+                {
+                    "command": "fossil.unstageAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.unstageAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.revertAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.stageAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.stageAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.revertAll",
+                    "when": "fossil.found && scmProvider == fossil && (scmResourceGroup == working || scmResourceGroup == conflict)",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.addAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.clean",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.deleteFiles",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "inline@0"
+                },
+                {
+                    "command": "fossil.addAll",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "fossil.openFiles",
+                    "when": "fossil.found && scmProvider == fossil",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.openChange",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "group": "navigation"
+                }
+            ],
+            "scm/resourceState/context": [
+                {
+                    "command": "fossil.openChange",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.unstage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.unstage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.openChange",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.revert",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.openFile",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "group": "inline@0"
+                },
+                {
+                    "command": "fossil.revert",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "group": "inline@1"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "inline@2"
+                },
+                {
+                    "command": "fossil.deleteFile",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "inline@0"
+                },
+                {
+                    "command": "fossil.add",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "inline@2"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.ignore",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.openFiles",
+                    "when": "fossil.found && scmProvider == fossil",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.forget",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "2_modification"
+                },
+                {
+                    "command": "fossil.relocate",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceState == MISSING",
+                    "group": "2_modification"
+                }
+            ],
+            "scm/resourceFolder/context": [
+                {
+                    "command": "fossil.unstage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.unstage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.revert",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.stage",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.revert",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.add",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.clean",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "1_modification"
+                },
+                {
+                    "command": "fossil.add",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "group": "inline"
+                },
+                {
+                    "command": "fossil.openFiles",
+                    "when": "fossil.found && scmProvider == fossil",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.openChange",
+                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "group": "navigation"
+                }
+            ],
+            "editor/title": [
+                {
+                    "command": "fossil.openFileFromUri",
+                    "group": "navigation",
+                    "when": "fossilOpenRepositoryCount && isInDiffEditor && resourceScheme != extension && scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.openChangeFromUri",
+                    "group": "navigation",
+                    "when": "fossilOpenRepositoryCount && !isInDiffEditor && resourceScheme == file && scmProvider == fossil"
+                },
+                {
+                    "command": "fossil.fileLog",
+                    "when": "fossilOpenRepositoryCount && !isInDiffEditor"
+                },
+                {
+                    "command": "fossil.render",
+                    "when": "fossil.found && !isInDiffEditor && (resourceExtname =~ /^\\.(md|wiki|pikchr)$/ || resourceLangId == pikchr) || fossilOpenRepositoryCount && resourceScheme == untitled",
+                    "group": "navigation"
+                },
+                {
+                    "command": "fossil.wikiCreate",
+                    "when": "activeWebviewPanelId == fossil.renderPanel",
+                    "group": "navigation"
+                }
+            ],
+            "webview/context": [
+                {
+                    "command": "fossil.renderSave",
+                    "when": "webviewId == fossil.renderPanel"
+                }
+            ]
+        },
+        "keybindings": [
+            {
+                "command": "fossil.renderSave",
+                "key": "ctrl+s",
+                "mac": "cmd+s",
+                "when": "webviewId == fossil.renderPanel"
+            }
+        ],
+        "submenus": [
+            {
+                "id": "fossil.merge",
+                "label": "%submenu.merge%"
+            },
+            {
+                "id": "fossil.timeline",
+                "label": "%submenu.timeline%"
+            },
+            {
+                "id": "fossil.stash",
+                "label": "%submenu.stash%"
+            },
+            {
+                "id": "fossil.patch",
+                "label": "%submenu.patch%"
+            },
+            {
+                "id": "fossil.commit",
+                "label": "%submenu.commit%"
+            }
+        ],
+        "configuration": {
+            "title": "Fossil",
+            "properties": {
+                "fossil.autoSyncInterval": {
+                    "type": "number",
+                    "markdownDescription": "%config.autoSyncInterval%",
+                    "default": 180,
+                    "minimum": 0
+                },
+                "fossil.autoRefresh": {
+                    "type": "boolean",
+                    "description": "%config.autoRefresh%",
+                    "default": true
+                },
+                "fossil.enableRenaming": {
+                    "type": "boolean",
+                    "description": "%config.enableRenaming%",
+                    "default": true
+                },
+                "fossil.ignoreMissingFossilWarning": {
+                    "type": "boolean",
+                    "description": "Ignores the warning when Fossil is missing",
+                    "default": false
+                },
+                "fossil.path": {
+                    "type": "string",
+                    "markdownDescription": "%config.path%",
+                    "scope": "machine"
+                },
+                "fossil.username": {
+                    "type": "string",
+                    "markdownDescription": "%config.username%"
+                },
+                "fossil.defaultUsername": {
+                    "type": "string",
+                    "markdownDescription": "%config.defaultUsername%"
+                },
+                "fossil.confirmGitExport": {
+                    "type": "string",
+                    "enum": [
+                        "Automatically",
+                        "Never",
+                        "Ask"
+                    ],
+                    "default": "Ask",
+                    "markdownDescription": "When repository was exported to git, ask to run `fossil export` after every commit"
+                },
+                "fossil.globalArgs": {
+                    "type": "array",
+                    "items": { "type": "string"},
+                    "scope": "window",
+                    "markdownDescription": "Extra arguments added to each `fossil` command (see `fossil help -o`)"
+                },
+                "fossil.commitArgs": {
+                    "type": "array",
+                    "items": { "type": "string"},
+                    "scope": "window",
+                    "markdownDescription": "Extra arguments added to `fossil commit` command (see `fossil help commit`)"
+                }
+            }
+        },
+        "customEditors": [
+            {
+                "viewType": "fossil.previewWikiPanel",
+                "displayName": "Fossil Wiki Preview",
+                "priority": "option",
+                "selector": [
+                    {
+                        "filenamePattern": "*.{wiki,md,pikchr}"
+                    }
+                ]
+            }
+        ],
+        "languages": [
+            {
+                "id": "pikchr",
+                "extensions": [
+                    ".pikchr"
+                ],
+                "icon": {
+                    "dark": "pikchr/assets/pikchr.svg",
+                    "light": "pikchr/assets/pikchr.svg"
+                },
+                "configuration": "pikchr/language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "pikchr",
+                "scopeName": "source.pikchr",
+                "path": "./pikchr/pikchr.tmLanguage.json",
+                "embeddedLanguages": {
+                    "meta.embedded.block.pikchr": "pikchr"
+                }
+            },
+            {
+                "scopeName": "markdown.pikchr.codeblock",
+                "path": "./pikchr/codeblock.pikchr.tmLanguage.json",
+                "injectTo": [
+                    "text.html.markdown"
+                ],
+                "embeddedLanguages": {
+                    "meta.embedded.block.pikchr": "pikchr"
+                }
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run bundle -- --minify",
+        "bundle": "node ./esbuild.config.js",
+        "esbuild-preview": "esbuild ./media/preview.ts --bundle --outfile=media/preview.js --platform=browser --format=iife",
+        "compile": "npm run esbuild-preview && tsc -p ./",
+        "package": "vsce package --allow-star-activation",
+        "deploy": "vsce publish",
+        "pretest": "npm run compile",
+        "test": "node ./out/test/runTest.js",
+        "coverage": "node ./node_modules/c8/bin/c8.js --reporter lcov --exclude [] --check-coverage npm run test",
+        "coverage-ci": "node ./node_modules/c8/bin/c8.js --reporter json-summary --exclude [] --check-coverage npm run test && node ./out/test/summaryAsMarkdown.js coverage/coverage-summary.json",
+        "lint": "eslint ./src --ext .ts src media",
+        "lint:fix": "eslint --fix --ext .ts src media",
+        "grammar-test": "vscode-tmgrammar-test ./pikchr/test/*.test.pikchr"
+    },
+    "dependencies": {
+        "vscode-nls": "^5.0.1"
+    },
+    "devDependencies": {
+        "@microsoft/eslint-formatter-sarif": "^3.1.0",
+        "@octokit/rest": "^20.1.1",
+        "@types/mocha": "~10.0.9",
+        "@types/node": "^18",
+        "@types/sinon": "~17.0.3",
+        "@types/vscode": "^1.36.0",
+        "@types/vscode-webview": "^1.57.0",
+        "@typescript-eslint/eslint-plugin": "^7.6.0",
+        "@typescript-eslint/parser": "^7.6.0",
+        "@vscode/test-electron": "~2.4.1",
+        "@vscode/vsce": "~2.32.0",
+        "c8": "^10.1.2",
+        "esbuild": "~0.24.0",
+        "eslint": "^8.57.1",
+        "eslint-config-standard": "~17.0.0",
+        "eslint-plugin-import": "~2.27.5",
+        "eslint-plugin-n": "^15.7.0",
+        "eslint-plugin-prettier": "~4.2.1",
+        "eslint-plugin-promise": "~6.1.1",
+        "mocha": "~10.8.2",
+        "prettier": "~2.8.8",
+        "sinon": "~18.0.1",
+        "typescript": "^5.4.5",
+        "vscode-tmgrammar-test": "^0.1.3"
+    },
+    "__metadata": {
+        "id": "e828bfe6-95e7-4c7a-a334-ae2cc5ba8788",
+        "publisherDisplayName": "koog1000",
+        "publisherId": "8e4cabe1-5c1f-4bf5-bbf3-8bb8d5de842c"
+    }
+}

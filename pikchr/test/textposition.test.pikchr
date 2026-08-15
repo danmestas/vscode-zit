@@ -1,0 +1,40 @@
+// SYNTAX TEST "source.pikchr" "everything related to using text"
+
+box "" above
+//     ^^^^^ keyword.pikchr
+
+box "" aligned
+//     ^^^^^^^ keyword.pikchr
+
+box "" below
+//     ^^^^^ keyword.pikchr
+
+box "" big
+//     ^^^ keyword.pikchr
+
+box "" bold
+//     ^^^^ keyword.pikchr
+
+box "" mono
+//     ^^^^ keyword.pikchr
+
+box "" monospace
+//     ^^^^^^^^^ keyword.pikchr
+
+box "" center
+//     ^^^^^^ keyword.pikchr
+
+box "" italic
+//     ^^^^^^ keyword.pikchr
+
+box "" ljust
+//     ^^^^^ keyword.pikchr
+
+box "" rjust
+//     ^^^^^ keyword.pikchr
+
+box "" small
+//     ^^^^^ keyword.pikchr
+
+box "" small bold
+//     ^^^^^ ^^^^ keyword.pikchr

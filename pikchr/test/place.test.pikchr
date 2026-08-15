@@ -1,0 +1,15 @@
+// SYNTAX TEST "source.pikchr" "place node"
+
+arrow from last dot to X0
+//    ^^^^ keyword.pikchr
+//         ^^^^ constant.language.pikchr
+//              ^^^ entity.name.function.pikchr
+//                  ^^ keyword.pikchr
+//                     ^^ variable.language.place.pikchr
+circle at end of first arrow
+//     ^^ keyword.pikchr
+//        ^^^ support.constant.edge.pikchr
+//            ^^ keyword.control.of.pikchr
+//              ^ -keyword.control.of.pikchr
+//               ^^^^^ constant.language.pikchr
+//                     ^^^^^ entity.name.function.pikchr
