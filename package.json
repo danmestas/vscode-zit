@@ -40,6 +40,11 @@
                 "icon": "$(plus)"
             },
             {
+                "command": "zit.ignore",
+                "title": "%command.ignore%",
+                "category": "Zit"
+            },
+            {
                 "command": "zit.branch",
                 "title": "%command.branch%",
                 "category": "Zit"
@@ -269,6 +274,13 @@
             }
         ],
         "menus": {
+            "explorer/context": [
+                {
+                    "command": "zit.ignore",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file",
+                    "group": "1_modification@3"
+                }
+            ],
             "commandPalette": [
                 {
                     "command": "zit.clone",
@@ -301,6 +313,10 @@
                 {
                     "command": "zit.openFileFromUri",
                     "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.ignore",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file"
                 },
                 {
                     "command": "zit.revert",
@@ -664,6 +680,11 @@
                     "group": "inline@2"
                 },
                 {
+                    "command": "zit.ignore",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
+                    "group": "1_modification@3"
+                },
+                {
                     "command": "zit.openFiles",
                     "when": "zit.found && scmProvider == zit",
                     "group": "navigation"
@@ -699,6 +720,11 @@
                     "command": "zit.clean",
                     "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "1_modification"
+                },
+                {
+                    "command": "zit.ignore",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
+                    "group": "1_modification@3"
                 },
                 {
                     "command": "zit.add",

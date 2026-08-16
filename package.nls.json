@@ -23,6 +23,7 @@
     "command.pushTo": "Push to...",
     "command.add": "Add Files",
     "command.addAll": "Add All Untracked Files",
+    "command.ignore": "Add to .zitignore",
     "command.forget": "Forget Files",
     "command.rename": "Rename File",
     "command.showOutput": "Show zit output",

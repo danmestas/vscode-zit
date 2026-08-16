@@ -17,6 +17,7 @@ import {
     Selection,
     SourceControl,
     LogOutputChannel,
+    FileSystemError,
 } from 'vscode';
 import { LineChange, revertChanges } from './revert';
 import * as path from 'path';
@@ -60,6 +61,7 @@ type CommandKey =
     | 'fileLog'
     | 'forget'
     | 'gitExport'
+    | 'ignore'
     | 'init'
     | 'log'
     | 'merge'
@@ -421,6 +423,87 @@ export class CommandCenter {
         const repository = this.model.getRepository(resources[0]);
         if (repository) {
             await repository.add(...resources);
+        }
+    }
+
+    @command()
+    async ignore(
+        ...resourceArgs: Array<Uri | ZitResource | Array<Uri | ZitResource>>
+    ): Promise<void> {
+        const resources = resourceArgs.flatMap(resource =>
+            Array.isArray(resource) ? resource : [resource]
+        );
+        const resourcesByRepository = new Map<Repository, Uri[]>();
+
+        for (const resource of resources) {
+            const uri =
+                resource instanceof ZitResource
+                    ? resource.resourceUri
+                    : resource;
+            const repository = this.model.getRepository(uri);
+            if (!repository) {
+                continue;
+            }
+
+            const repositoryResources =
+                resourcesByRepository.get(repository) ?? [];
+            repositoryResources.push(uri);
+            resourcesByRepository.set(repository, repositoryResources);
+        }
+
+        for (const [repository, repositoryResources] of resourcesByRepository) {
+            const relativePaths = [
+                ...new Set(
+                    repositoryResources
+                        .map(uri =>
+                            repository
+                                .mapFileUriToRepoRelativePath(uri)
+                                .replace(/\[/g, '\\[')
+                        )
+                        .filter(relativePath => relativePath.length > 0)
+                ),
+            ];
+            if (!relativePaths.length) {
+                continue;
+            }
+
+            const ignoreUri = Uri.file(
+                path.join(repository.root, '.zitignore')
+            );
+            let contents = '';
+            try {
+                contents = Buffer.from(
+                    await workspace.fs.readFile(ignoreUri)
+                ).toString('utf8');
+            } catch (error) {
+                if (
+                    !(error instanceof FileSystemError) ||
+                    error.code !== 'FileNotFound'
+                ) {
+                    throw error;
+                }
+            }
+
+            const eol = contents.includes('\r\n') ? '\r\n' : '\n';
+            const existing = new Set(contents.split(/\r?\n/));
+            const additions = relativePaths.filter(
+                relativePath => !existing.has(relativePath)
+            );
+
+            if (additions.length) {
+                const separator =
+                    contents.length > 0 && !contents.endsWith('\n') ? eol : '';
+                const updated = `${contents}${separator}${additions.join(
+                    eol
+                )}${eol}`;
+                await workspace.fs.writeFile(
+                    ignoreUri,
+                    Buffer.from(updated, 'utf8')
+                );
+            }
+
+            await window.showTextDocument(ignoreUri, { preview: false });
+            await repository.refresh();
         }
     }
     @command()

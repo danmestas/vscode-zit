@@ -738,6 +738,7 @@ suite('Zit setup', function () {
             'zit.fileLog',
             'zit.forget',
             'zit.gitExport',
+            'zit.ignore',
             'zit.init',
             'zit.log',
             'zit.merge',

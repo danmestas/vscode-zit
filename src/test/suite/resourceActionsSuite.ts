@@ -117,6 +117,91 @@ export function resourceActionsSuite(this: Suite): void {
         });
     });
 
+    test('zit ignore appends unique root-relative paths', async () => {
+        const repository = getRepository();
+        const ignoreUri = Uri.joinPath(rootUri, '.zitignore');
+        const first = Uri.joinPath(rootUri, 'ignore me.txt');
+        const nestedDirectory = Uri.joinPath(rootUri, 'nested');
+        const nested = Uri.joinPath(nestedDirectory, '[draft].txt');
+        const refresh = this.ctx.sandbox.stub(repository, 'refresh').resolves();
+        const show = this.ctx.sandbox
+            .stub(window, 'showTextDocument')
+            .resolves();
+
+        await fs.mkdir(nestedDirectory.fsPath, { recursive: true });
+        await Promise.all([
+            fs.writeFile(first.fsPath, ''),
+            fs.writeFile(nested.fsPath, ''),
+            fs.writeFile(
+                ignoreUri.fsPath,
+                'existing.txt\nnested/\\[draft].txt'
+            ),
+        ]);
+
+        try {
+            await commands.executeCommand('zit.ignore', first, [
+                first,
+                nested,
+                nested,
+            ]);
+
+            assert.equal(
+                await fs.readFile(ignoreUri.fsPath, 'utf8'),
+                'existing.txt\nnested/\\[draft].txt\nignore me.txt\n'
+            );
+            sinon.assert.calledOnce(show);
+            assert.equal(
+                (show.firstCall.args[0] as Uri).toString(),
+                ignoreUri.toString()
+            );
+            assert.deepEqual(show.firstCall.args[1], { preview: false });
+            sinon.assert.calledOnce(refresh);
+        } finally {
+            await Promise.all([
+                fs.rm(ignoreUri.fsPath, { force: true }),
+                fs.rm(first.fsPath, { force: true }),
+                fs.rm(nestedDirectory.fsPath, {
+                    force: true,
+                    recursive: true,
+                }),
+            ]);
+        }
+    });
+
+    test('zit ignore creates the root ignore file', async () => {
+        const repository = getRepository();
+        const ignoreUri = Uri.joinPath(rootUri, '.zitignore');
+        const resource = Uri.joinPath(rootUri, 'create-ignore.txt');
+        const refresh = this.ctx.sandbox.stub(repository, 'refresh').resolves();
+        const show = this.ctx.sandbox
+            .stub(window, 'showTextDocument')
+            .resolves();
+
+        await fs.rm(ignoreUri.fsPath, { force: true });
+        await fs.writeFile(resource.fsPath, '');
+
+        try {
+            await commands.executeCommand('zit.ignore', resource);
+
+            assert.equal(
+                await fs.readFile(ignoreUri.fsPath, 'utf8'),
+                'create-ignore.txt\n'
+            );
+            sinon.assert.calledOnce(show);
+            assert.equal(
+                (show.firstCall.args[0] as Uri).toString(),
+                ignoreUri.toString()
+            );
+            assert.deepEqual(show.firstCall.args[1], { preview: false });
+            sinon.assert.calledOnce(refresh);
+        } finally {
+            await Promise.all([
+                fs.rm(ignoreUri.fsPath, { force: true }),
+                fs.rm(resource.fsPath, { force: true }),
+            ]);
+        }
+    });
+
     test('zit add all leaves already-added files unchanged', async () => {
         const repository = getRepository();
         await cleanupZit(repository);
