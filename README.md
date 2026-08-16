@@ -33,7 +33,7 @@ Use **Update** to move the checkout to another check-in, branch, or tag. Merge a
 
 ### History and inspection
 
-The extension provides repository and file timelines, historical file content, diffs, and annotate/praise views. Select timeline entries to compare a check-in with its parent or open a historical file revision.
+The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files.
 
 ### Branches, tags, stashes, and remotes
 

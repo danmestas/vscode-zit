@@ -161,7 +161,7 @@ interface CommitSummary {
     readonly date?: string;
 }
 
-const MAX_HISTORY_ENTRIES = 512;
+export const MAX_HISTORY_ENTRIES = 512;
 
 const classes = {
     EDITED: ResourceStatus.MODIFIED,

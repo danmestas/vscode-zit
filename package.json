@@ -93,6 +93,36 @@
                 "category": "Zit"
             },
             {
+                "command": "zit.timelineFile",
+                "title": "%command.timelineFile%",
+                "category": "Zit",
+                "icon": "$(history)"
+            },
+            {
+                "command": "zit.timelineProject",
+                "title": "%command.timelineProject%",
+                "category": "Zit",
+                "icon": "$(repo)"
+            },
+            {
+                "command": "zit.timelineRefresh",
+                "title": "%command.refresh%",
+                "category": "Zit",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "zit.timelineLoadMore",
+                "title": "%command.timelineLoadMore%",
+                "category": "Zit",
+                "icon": "$(ellipsis)"
+            },
+            {
+                "command": "zit.timelineOpen",
+                "title": "%command.timelineOpen%",
+                "category": "Zit",
+                "icon": "$(go-to-file)"
+            },
+            {
                 "command": "zit.forget",
                 "title": "%command.forget%",
                 "category": "Zit"
@@ -273,15 +303,54 @@
                 "category": "Zit"
             }
         ],
+        "views": {
+            "explorer": [
+                {
+                    "id": "zit.timeline",
+                    "name": "%view.timeline%",
+                    "when": "zitOpenRepositoryCount",
+                    "visibility": "visible"
+                }
+            ]
+        },
         "menus": {
             "explorer/context": [
                 {
                     "command": "zit.ignore",
                     "when": "zitOpenRepositoryCount && resourceScheme == file",
                     "group": "1_modification@3"
+                },
+                {
+                    "command": "zit.timelineFile",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file",
+                    "group": "navigation@9"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "zit.timelineProject",
+                    "when": "view == zit.timeline && zitOpenRepositoryCount",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "zit.timelineRefresh",
+                    "when": "view == zit.timeline && zitOpenRepositoryCount",
+                    "group": "navigation@2"
                 }
             ],
             "commandPalette": [
+                {
+                    "command": "zit.timelineLoadMore",
+                    "when": "false"
+                },
+                {
+                    "command": "zit.timelineOpen",
+                    "when": "false"
+                },
+                {
+                    "command": "zit.timelineRefresh",
+                    "when": "false"
+                },
                 {
                     "command": "zit.clone",
                     "when": "zit.found"

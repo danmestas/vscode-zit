@@ -31,6 +31,10 @@ import type {
     ZitCommitMessage,
     ZitUsername,
 } from '../../openedRepository';
+import { CommandCenter } from '../../commands';
+import type { Model } from '../../model';
+import type { Repository } from '../../repository';
+import { ZitTimelineProvider } from '../../timelineProvider';
 
 // separate function because hash size is different
 const uriMatch = (uri: vscode.Uri, checkin: ZitCheckin) =>
@@ -898,5 +902,215 @@ export function timelineSuite(this: Suite): void {
 
         sinon.assert.calledThrice(showQuickPick);
         sinon.assert.calledOnceWithExactly(getCommitDetails, commit.hash);
+    });
+    test('Timeline view renders project commits with Zit metadata', async () => {
+        const commit: Commit = {
+            author: 'timeline-user' as ZitUsername,
+            branch: 'trunk' as ZitBranch,
+            date: new Date('2026-08-15T17:26:35Z'),
+            hash: 'c'.repeat(64) as ZitHash,
+            message: 'Timeline view commit' as ZitCommitMessage,
+        };
+        const getLogEntries = this.ctx.sandbox.stub().resolves([commit]);
+        const repository = {
+            root: '/tmp/timeline-project',
+            getLogEntries,
+        } as unknown as Repository;
+        const repositoryChanged = new vscode.EventEmitter<unknown>();
+        const repositoryOpened = new vscode.EventEmitter<Repository>();
+        const repositoryClosed = new vscode.EventEmitter<Repository>();
+        const model = {
+            repositories: [repository],
+            getRepository: this.ctx.sandbox.stub().returns(repository),
+            onDidChangeRepository: repositoryChanged.event,
+            onDidOpenRepository: repositoryOpened.event,
+            onDidCloseRepository: repositoryClosed.event,
+        } as unknown as Model;
+        const provider = new ZitTimelineProvider(model);
+
+        try {
+            provider.showProject();
+            const items = await provider.getChildren();
+
+            assert.equal(items.length, 1);
+            assert.equal(items[0].label, commit.message);
+            assert.match(String(items[0].description), /trunk/);
+            assert.match(String(items[0].description), /timeline-user/);
+            assert.match(String(items[0].description), /c{12}/);
+            assert.deepEqual(items[0].command, {
+                command: 'zit.timelineOpen',
+                title: 'Open Commit',
+                arguments: [repository, commit, undefined],
+            });
+            sinon.assert.calledOnceWithExactly(getLogEntries, { limit: 51 });
+        } finally {
+            provider.dispose();
+            repositoryChanged.dispose();
+            repositoryOpened.dispose();
+            repositoryClosed.dispose();
+        }
+    });
+
+    test('Timeline view scopes file history and loads bounded pages', async () => {
+        const commits = Array.from({ length: 120 }, (_, index): Commit => ({
+            author: 'timeline-user' as ZitUsername,
+            branch: 'trunk' as ZitBranch,
+            date: new Date('2026-08-15T17:26:35Z'),
+            hash: index.toString(16).padStart(64, '0') as ZitHash,
+            message: `Timeline commit ${index}` as ZitCommitMessage,
+        }));
+        const getLogEntries = this.ctx.sandbox
+            .stub()
+            .callsFake(({ limit }: { limit: number }) =>
+                Promise.resolve(commits.slice(0, limit))
+            );
+        const repository = {
+            root: '/tmp/timeline-project',
+            getLogEntries,
+        } as unknown as Repository;
+        const fileUri = vscode.Uri.file(
+            '/tmp/timeline-project/src/timeline.ts'
+        );
+        const repositoryChanged = new vscode.EventEmitter<unknown>();
+        const repositoryOpened = new vscode.EventEmitter<Repository>();
+        const repositoryClosed = new vscode.EventEmitter<Repository>();
+        const getRepository = this.ctx.sandbox.stub().returns(repository);
+        const model = {
+            repositories: [repository],
+            getRepository,
+            onDidChangeRepository: repositoryChanged.event,
+            onDidOpenRepository: repositoryOpened.event,
+            onDidCloseRepository: repositoryClosed.event,
+        } as unknown as Model;
+        const provider = new ZitTimelineProvider(model);
+
+        try {
+            // Exercise the editor-event boundary without exposing it publicly.
+            const providerEvents = provider as unknown as {
+                onActiveEditorChanged(editor: vscode.Uri | undefined): void;
+            };
+            providerEvents.onActiveEditorChanged(
+                toZitUri(fileUri, commits[0].hash)
+            );
+            providerEvents.onActiveEditorChanged(undefined);
+            getRepository.returns(undefined);
+            repositoryChanged.fire(undefined);
+            repositoryClosed.fire(repository);
+            getRepository.returns(repository);
+            repositoryOpened.fire(repository);
+            const firstPage = await provider.getChildren();
+
+            assert.equal(firstPage.length, 51);
+            assert.equal(firstPage[firstPage.length - 1].label, 'Load more');
+            const firstOptions = getLogEntries.firstCall.args[0] as {
+                fileUri: vscode.Uri;
+                limit: number;
+            };
+            assert.equal(firstOptions.fileUri.toString(), fileUri.toString());
+            assert.equal(firstOptions.limit, 51);
+
+            provider.loadMore(repository);
+            const secondPage = await provider.getChildren();
+
+            assert.equal(secondPage.length, 101);
+            assert.equal(secondPage[secondPage.length - 1].label, 'Load more');
+            const secondOptions = getLogEntries.secondCall.args[0] as {
+                fileUri: vscode.Uri;
+                limit: number;
+            };
+            assert.equal(secondOptions.fileUri.toString(), fileUri.toString());
+            assert.equal(secondOptions.limit, 101);
+
+            provider.loadMore(repository);
+            const finalPage = await provider.getChildren();
+
+            assert.equal(finalPage.length, commits.length);
+            assert.notEqual(finalPage[finalPage.length - 1].label, 'Load more');
+            const finalOptions = getLogEntries.thirdCall.args[0] as {
+                fileUri: vscode.Uri;
+                limit: number;
+            };
+            assert.equal(finalOptions.fileUri.toString(), fileUri.toString());
+            assert.equal(finalOptions.limit, 151);
+        } finally {
+            provider.dispose();
+            repositoryChanged.dispose();
+            repositoryOpened.dispose();
+            repositoryClosed.dispose();
+        }
+    });
+
+    test('Timeline commands select scopes and open exact commits', async () => {
+        const fileUri = vscode.Uri.file(
+            '/tmp/timeline-project/src/timeline.ts'
+        );
+        const commit: Commit = {
+            author: 'timeline-user' as ZitUsername,
+            branch: 'trunk' as ZitBranch,
+            date: new Date('2026-08-15T17:26:35Z'),
+            hash: 'd'.repeat(64) as ZitHash,
+            message: 'Open timeline commit' as ZitCommitMessage,
+        };
+        const showFile = this.ctx.sandbox.stub();
+        const showProject = this.ctx.sandbox.stub();
+        const loadMore = this.ctx.sandbox.stub();
+        const refresh = this.ctx.sandbox.stub();
+        const timeline = { showFile, showProject, loadMore, refresh };
+        const commandCenter = Object.assign(
+            Object.create(CommandCenter.prototype),
+            { timeline }
+        ) as CommandCenter;
+        const executeCommand = this.ctx.sandbox
+            .stub(vscode.commands, 'executeCommand')
+            .resolves();
+
+        await commandCenter.timelineFile(fileUri);
+        await commandCenter.timelineProject();
+        commandCenter.timelineRefresh();
+        const repository = {
+            mapFileUriToRepoRelativePath: this.ctx.sandbox
+                .stub()
+                .returns('src/timeline.ts' as RelativePath),
+            getCommitDetails: this.ctx.sandbox.stub().resolves({
+                ...commit,
+                files: [
+                    {
+                        klass: 'EDITED' as ZitClass,
+                        path: 'src/timeline.ts' as RelativePath,
+                        status: ResourceStatus.MODIFIED,
+                    },
+                ],
+            } satisfies CommitDetails),
+            diffToParent: this.ctx.sandbox.stub().resolves(),
+        } as unknown as Repository;
+        await commandCenter.timelineLoadMore(repository);
+
+        sinon.assert.calledOnceWithExactly(showFile, fileUri);
+        sinon.assert.calledOnce(showProject);
+        sinon.assert.calledOnceWithExactly(loadMore, repository);
+        sinon.assert.calledOnce(refresh);
+        sinon.assert.calledTwice(executeCommand);
+        sinon.assert.alwaysCalledWithExactly(
+            executeCommand,
+            'zit.timeline.focus'
+        );
+
+        const presentCommit = this.ctx.sandbox
+            .stub(interaction, 'presentCommit')
+            .resolves();
+        await commandCenter.timelineOpen(repository, commit);
+        sinon.assert.calledOnceWithExactly(
+            presentCommit,
+            repository,
+            commit.hash
+        );
+
+        await commandCenter.timelineOpen(repository, commit, fileUri);
+        sinon.assert.calledOnceWithExactly(
+            repository.diffToParent as sinon.SinonStub,
+            'src/timeline.ts',
+            commit.hash,
+            ResourceStatus.MODIFIED
+        );
     });
 }

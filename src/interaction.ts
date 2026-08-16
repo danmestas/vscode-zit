@@ -451,6 +451,20 @@ export async function presentLogSourcesMenu(
     }
 }
 
+export async function presentCommit(
+    commands: InteractionAPI,
+    checkin: ZitCheckin
+): Promise<void> {
+    const details = await commands.getCommitDetails(checkin);
+    const close = asBackItem(localize('timeline', 'timeline'), () =>
+        Promise.resolve(undefined)
+    );
+    let result = await presentCommitDetails(details, close, commands);
+    while (result) {
+        result = await result.run();
+    }
+}
+
 async function pickCommitAsShowCommitDetailsRunnable(
     source: CommitSources,
     entries: Commit[],

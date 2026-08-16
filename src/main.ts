@@ -14,6 +14,7 @@ import * as nls from 'vscode-nls';
 import typedConfig from './config';
 import { findZit } from './zitFinder';
 import { ZitExecutable } from './zitExecutable';
+import { ZitTimelineProvider } from './timelineProvider';
 
 export const localize = nls.loadMessageBundle();
 
@@ -73,8 +74,16 @@ async function init(context: ExtensionContext): Promise<Model | undefined> {
     model.onDidCloseRepository(onRepository, null, disposables);
     onRepository();
 
+    const timeline = new ZitTimelineProvider(model);
+    const timelineView = window.createTreeView('zit.timeline', {
+        treeDataProvider: timeline,
+        showCollapseAll: true,
+    });
+    timeline.setView(timelineView);
     disposables.push(
-        new CommandCenter(executable, model, outputChannel),
+        timeline,
+        timelineView,
+        new CommandCenter(executable, model, outputChannel, timeline),
         new ZitFileSystemProvider(model)
     );
     return model;

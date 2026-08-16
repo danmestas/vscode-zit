@@ -31,6 +31,7 @@ import {
     ZitCommitMessage,
     ResourceStatus,
 } from './openedRepository';
+import type { Commit } from './openedRepository';
 import type { Model } from './model';
 import { ZitResource, CommitOptions, Repository } from './repository';
 import { ZitResourceGroup, isResourceGroup } from './resourceGroups';
@@ -41,6 +42,7 @@ import { partition } from './util';
 import { fromZitUri, toZitEmptyUri, toZitUri } from './uri';
 import { ZitAnnotator } from './praise';
 import type { DocumentFsPath, ZitExecutable } from './zitExecutable';
+import type { ZitTimelineProvider } from './timelineProvider';
 
 import { localize } from './main';
 import { exportGit } from './gitExport';
@@ -91,6 +93,11 @@ type CommandKey =
     | 'stashShow'
     | 'sync'
     | 'undo'
+    | 'timelineFile'
+    | 'timelineLoadMore'
+    | 'timelineOpen'
+    | 'timelineProject'
+    | 'timelineRefresh'
     | 'update';
 export type CommandId = `zit.${CommandKey}`;
 
@@ -158,7 +165,8 @@ export class CommandCenter {
     constructor(
         private readonly executable: ZitExecutable,
         private readonly model: Model,
-        private readonly outputChannel: LogOutputChannel
+        private readonly outputChannel: LogOutputChannel,
+        private readonly timeline: ZitTimelineProvider
     ) {
         this.disposables = register.map(command =>
             commands.registerCommand(command.id, command.method, this)
@@ -1045,6 +1053,51 @@ export class CommandCenter {
         if (choice) {
             await choice.run();
         }
+    }
+
+    @command()
+    async timelineFile(uri?: Uri): Promise<void> {
+        uri ??= window.activeTextEditor?.document.uri;
+        if (!uri) {
+            return;
+        }
+        this.timeline.showFile(uri);
+        await commands.executeCommand('zit.timeline.focus');
+    }
+
+    @command()
+    async timelineProject(): Promise<void> {
+        this.timeline.showProject();
+        await commands.executeCommand('zit.timeline.focus');
+    }
+
+    @command()
+    timelineRefresh(): void {
+        this.timeline.refresh();
+    }
+
+    @command()
+    async timelineLoadMore(repository: Repository): Promise<void> {
+        this.timeline.loadMore(repository);
+    }
+
+    @command()
+    async timelineOpen(
+        repository: Repository,
+        commit: Commit,
+        fileUri?: Uri
+    ): Promise<void> {
+        if (!fileUri) {
+            await interaction.presentCommit(repository, commit.hash);
+            return;
+        }
+
+        const filePath = repository.mapFileUriToRepoRelativePath(fileUri);
+        const details = await repository.getCommitDetails(commit.hash);
+        const status = details.files.find(
+            file => file.path === filePath
+        )?.status;
+        await repository.diffToParent(filePath, commit.hash, status);
     }
 
     @command()

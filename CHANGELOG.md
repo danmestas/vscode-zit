@@ -15,6 +15,7 @@ All notable changes to the Zit extension are documented here.
 - Rewrote user and developer documentation around supported Zit workflows.
 - Upgraded development and CI tooling to Node.js 24 LTS, current VS Code test/package tooling, ESLint 10 flat configuration, and Node 24 GitHub Actions.
 - Added **Add to .zitignore** actions for Explorer files and untracked Source Control resources, including multi-selection and duplicate-safe updates.
+- Added an Explorer-side Zit Timeline view with automatic file scoping, project history, bounded paging, commit details, and parent diffs.
 
 ### Removed
 
