@@ -90,7 +90,7 @@ export async function zitOpen(sandbox: sinon.SinonSandbox): Promise<void> {
 }
 
 export function getModel(): Model {
-    const extension = vscode.extensions.getExtension('koog1000.zit');
+    const extension = vscode.extensions.getExtension('danmestas.zit');
     assert.ok(extension);
     const model = extension.exports as Model;
     assert.ok(model, "extension initialization didn't succeed");
