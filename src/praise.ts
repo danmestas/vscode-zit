@@ -45,6 +45,15 @@ const annotationHighlight = window.createTextEditorDecorationType({
     },
 });
 
+const nbsp = ' ';
+
+export function renderPraiseLine(annotation: Annotation): string {
+    const checkin = annotation[0].slice(0, 8) || nbsp.repeat(8);
+    const date = annotation[1] || nbsp.repeat(10);
+    const username = annotation[2].slice(-13);
+    return `${checkin} ${date}${nbsp.repeat(14 - username.length)}${username}`;
+}
+
 export class ZitAnnotator {
     private static editors = new WeakMap<TextEditor, ZitAnnotator>();
     private readonly disposable: Disposable;
@@ -74,38 +83,19 @@ export class ZitAnnotator {
         editor: TextEditor,
         annotations: Annotation[]
     ): ZitAnnotator {
-        let previousHash: ZitHash | undefined;
-        const nbsp = ' ';
+        const common = {
+            borderStyle: 'solid',
+            borderWidth: '0 2px 0 0',
+        };
         const decorations = annotations.map((annotation, lineNo) => {
             const range = editor.document.validateRange(
                 new Range(lineNo, 0, lineNo, 0)
             );
-            let before: ThemableDecorationAttachmentRenderOptions;
-            const common = {
-                borderStyle: 'solid',
-                borderWidth: '0 2px 0 0',
+            const before: ThemableDecorationAttachmentRenderOptions = {
+                contentText: renderPraiseLine(annotation),
+                textDecoration: 'none;padding: 0 1ch 0 0',
+                ...common,
             };
-            if (previousHash == annotation[0]) {
-                before = {
-                    contentText: nbsp,
-                    textDecoration: 'none;padding: 0 33ch 0 0',
-                    ...common,
-                };
-            } else {
-                previousHash = annotation[0];
-                // total width: 8(hash) + 1 + 10(date) + 1 + 13 = 33
-                const checkin = annotation[0].slice(0, 8) || nbsp.repeat(8);
-                const date = annotation[1] || nbsp.repeat(10);
-                const username = annotation[2].slice(-13);
-                const contentText = `${checkin} ${date}${nbsp.repeat(
-                    14 - username.length
-                )}${username}`;
-                before = {
-                    contentText,
-                    textDecoration: 'none;padding: 0 1ch 0 0',
-                    ...common,
-                };
-            }
             if (!annotation[0]) {
                 before.backgroundColor = 'rgba(53, 255, 28, 0.07)';
             }

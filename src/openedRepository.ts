@@ -358,7 +358,7 @@ export class OpenedRepository {
         const annotations: Annotation[] = [];
         for (const line of result.stdout.split('\n')) {
             const match = line.match(
-                /^([0-9a-f]{40}|[0-9a-f]{64})\s+(\d{4}-\d{2}-\d{2})\s/
+                /^([0-9a-f]{10}|[0-9a-f]{40}|[0-9a-f]{64})\s+(\d{4}-\d{2}-\d{2})\s/
             );
             if (match) {
                 annotations.push([
@@ -368,7 +368,19 @@ export class OpenedRepository {
                 ]);
             }
         }
-        return annotations;
+
+        const authors = new Map<ZitHash, ZitUsername>();
+        for (const [checkin] of annotations) {
+            if (!authors.has(checkin)) {
+                const artifact = await this.readArtifact(checkin);
+                authors.set(checkin, artifact.user ?? ('' as ZitUsername));
+            }
+        }
+        return annotations.map(([checkin, date]) => [
+            checkin,
+            date,
+            authors.get(checkin)!,
+        ]);
     }
 
     async revert(paths: RelativePath[]): Promise<void> {

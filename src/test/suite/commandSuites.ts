@@ -782,7 +782,7 @@ export function DiffSuite(this: Suite): void {
             const outside = Uri.file('/tmp/outside-zit-history.txt');
             await commands.executeCommand('zit.fileLog', outside);
             await commands.executeCommand('zit.revertChange', outside, [], 0);
-            await commands.executeCommand('zit.annotate');
+            await commands.executeCommand('zit.praise');
             await commands.executeCommand('zit.openFileFromUri');
             await commands.executeCommand(
                 'zit.openFileFromUri',

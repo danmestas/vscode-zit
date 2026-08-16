@@ -35,6 +35,8 @@ Use **Update** to move the checkout to another check-in, branch, or tag. Merge a
 
 The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files.
 
+Run **Zit: Praise** from the Command Palette to show each committed line’s check-in, date, and author in the editor margin. Hover a line for the commit message and full metadata; run **Praise** again to hide the annotations.
+
 ### Branches, tags, stashes, and remotes
 
 Supported workflows include:

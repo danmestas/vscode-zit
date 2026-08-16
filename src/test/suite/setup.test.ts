@@ -724,7 +724,6 @@ suite('Zit setup', function () {
         const expected = [
             'zit.add',
             'zit.addAll',
-            'zit.annotate',
             'zit.branch',
             'zit.branchChange',
             'zit.cherrypick',
@@ -749,6 +748,7 @@ suite('Zit setup', function () {
             'zit.openFileFromUri',
             'zit.openFiles',
             'zit.openResource',
+            'zit.praise',
             'zit.pull',
             'zit.push',
             'zit.pushTo',

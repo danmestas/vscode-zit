@@ -333,7 +333,7 @@ export function timelineSuite(this: Suite): void {
             await repository.cat({ path: this.ctx.workspaceUri.fsPath }),
             undefined
         );
-        const checkin = '3'.repeat(64) as ZitHash;
+        const checkin = '3'.repeat(10) as ZitHash;
         const bytes = Buffer.from([0, 1, 2, 255]);
         const cat = this.ctx.sandbox.stub(executable, 'cat').resolves(bytes);
         const content = await openedRepository.cat(
@@ -356,14 +356,18 @@ export function timelineSuite(this: Suite): void {
                     `${checkin} 2026-08-15 second line\n`,
             })
         );
+        const artifact = exec
+            .withArgs(['artifact', checkin, '--raw'])
+            .resolves(fakeExecutionResult({ stdout: 'U alice\n' }));
         const notesPath = vscode.Uri.joinPath(
             this.ctx.workspaceUri,
             'notes.txt'
         ).fsPath as DocumentFsPath;
         assert.deepEqual(await openedRepository.annotate(notesPath), [
-            [checkin, '2026-08-15', ''],
-            [checkin, '2026-08-15', ''],
+            [checkin, '2026-08-15', 'alice'],
+            [checkin, '2026-08-15', 'alice'],
         ]);
+        sinon.assert.calledOnce(artifact);
     });
 
     test('bounds malformed history and rejects incomplete Zit data', async () => {
@@ -402,12 +406,15 @@ export function timelineSuite(this: Suite): void {
                 stdout: `${annotatedCheckin} 2026-08-15 relative\n`,
             })
         );
+        exec.withArgs(['artifact', annotatedCheckin, '--raw']).resolves(
+            fakeExecutionResult({ stdout: 'U relative-user\n' })
+        );
         assert.deepEqual(
             await openedRepository.annotate(
                 'notes.txt' as DocumentFsPath,
                 annotatedCheckin
             ),
-            [[annotatedCheckin, '2026-08-15', '']]
+            [[annotatedCheckin, '2026-08-15', 'relative-user']]
         );
 
         for (const [limit, bounded] of [

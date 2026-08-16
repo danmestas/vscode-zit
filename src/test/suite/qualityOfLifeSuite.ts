@@ -14,12 +14,13 @@ import type {
     OpenedRepository,
     RelativePath,
 } from '../../openedRepository';
-import { ZitAnnotator } from '../../praise';
+import { renderPraiseLine, ZitAnnotator } from '../../praise';
+import type { DocumentFsPath } from '../../zitExecutable';
 import { revertChanges, type LineChange } from '../../revert';
 import { delay } from '../../util';
 
-function AnnotateSuite(this: Suite) {
-    test('Annotate ignores absent editors and documents outside repositories', async () => {
+function PraiseSuite(this: Suite) {
+    test('Praise ignores absent editors and documents outside repositories', async () => {
         await commands.executeCommand('workbench.action.closePanel');
         await commands.executeCommand('workbench.action.closeAllEditors');
         const registerHoverProvider = this.ctx.sandbox.stub(
@@ -27,7 +28,7 @@ function AnnotateSuite(this: Suite) {
             'registerHoverProvider'
         );
         try {
-            await commands.executeCommand('zit.annotate');
+            await commands.executeCommand('zit.praise');
             const outside = await workspace.openTextDocument({
                 content: 'outside repository\n',
             });
@@ -35,7 +36,7 @@ function AnnotateSuite(this: Suite) {
                 preserveFocus: false,
                 preview: false,
             });
-            await commands.executeCommand('zit.annotate');
+            await commands.executeCommand('zit.praise');
             sinon.assert.notCalled(registerHoverProvider);
         } finally {
             registerHoverProvider.restore();
@@ -43,7 +44,16 @@ function AnnotateSuite(this: Suite) {
         }
     });
 
-    suite('Annotate file', () => {
+    test('Formats the visible line author', () => {
+        const annotation: Annotation = [
+            'a'.repeat(64) as ZitHash,
+            '2026-08-15',
+            'u1' as ZitUsername,
+        ];
+        assert.match(renderPraiseLine(annotation), /u1$/);
+    });
+
+    suite('Praise file', () => {
         let registerHoverProviderSpy: sinon.SinonSpy<
             Parameters<typeof languages.registerHoverProvider>
         >;
@@ -63,9 +73,9 @@ function AnnotateSuite(this: Suite) {
         suiteSetup(async () => {
             this.timeout(30000); // sometimes io is unpredictable)
             cancellationTokenSource = new vscode.CancellationTokenSource();
-            const uri = Uri.joinPath(this.ctx.workspaceUri, 'annotate.txt');
+            const uri = Uri.joinPath(this.ctx.workspaceUri, 'praise.txt');
             path = uri.fsPath;
-            const relativePath = 'annotate.txt' as RelativePath;
+            const relativePath = 'praise.txt' as RelativePath;
             await fs.writeFile(path, [...'first', ''].join('\n'));
             const repository = getRepository();
             const repositoryAccess = repository as unknown as {
@@ -78,7 +88,7 @@ function AnnotateSuite(this: Suite) {
                     '--user',
                     `u${n}` as ZitUsername,
                     '-m',
-                    `annotate ${n}` as ZitCommitMessage,
+                    `praise ${n}` as ZitCommitMessage,
                     '--',
                     relativePath,
                 ]);
@@ -141,11 +151,22 @@ function AnnotateSuite(this: Suite) {
 
         test('First time', async () => {
             assert.equal(window.activeTextEditor?.document.uri.fsPath, path);
-            await commands.executeCommand('zit.annotate');
+            const annotations = await getRepository().annotate(
+                path as DocumentFsPath
+            );
+            assert.deepEqual(
+                annotations.map(([, , author]) => author),
+                [
+                    ...Array<string>(5).fill('u1'),
+                    ...Array<string>(6).fill('u2'),
+                    ...Array<string>(5).fill('u3'),
+                ]
+            );
+            await commands.executeCommand('zit.praise');
             sinon.assert.calledOnce(registerHoverProviderSpy);
-            sinon.assert.calledOnce(onDidChangeTextDocumentSpy);
-            sinon.assert.calledOnce(onDidCloseTextDocumentSpy);
-            sinon.assert.calledOnce(onDidChangeTextEditorSelectionSpy);
+            assert.equal(onDidChangeTextDocumentSpy.callCount, 1);
+            assert.equal(onDidCloseTextDocumentSpy.callCount, 1);
+            assert.equal(onDidChangeTextEditorSelectionSpy.callCount, 1);
         });
 
         test('Second time', async () => {
@@ -154,7 +175,7 @@ function AnnotateSuite(this: Suite) {
                 'registerHoverProvider'
             );
             assert.equal(window.activeTextEditor?.document.uri.fsPath, path);
-            await commands.executeCommand('zit.annotate');
+            await commands.executeCommand('zit.praise');
             sinon.assert.notCalled(registerHoverProviderSpy);
         });
 
@@ -168,7 +189,7 @@ function AnnotateSuite(this: Suite) {
                 );
             assert.ok(hover);
             assert.ok(hover.contents[0] instanceof vscode.MarkdownString);
-            assert.match(hover.contents[0].value, /^\*\*annotate 1\*\*/);
+            assert.match(hover.contents[0].value, /^\*\*praise 1\*\*/);
             assert.match(hover.contents[0].value, /\* user: \*\*u1\*\*/);
             assert.match(
                 hover.contents[0].value,
@@ -399,6 +420,6 @@ function RevertChangeSuite(this: Suite) {
 }
 
 export function QualityOfLifeSuite(this: Suite): void {
-    suite('Annotate', AnnotateSuite);
+    suite('Praise', PraiseSuite);
     suite('Revert change', RevertChangeSuite);
 }

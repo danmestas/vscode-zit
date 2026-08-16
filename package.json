@@ -293,8 +293,8 @@
                 "category": "Zit"
             },
             {
-                "command": "zit.annotate",
-                "title": "Annotate",
+                "command": "zit.praise",
+                "title": "Praise",
                 "category": "Zit"
             },
             {
@@ -512,7 +512,7 @@
                     "when": "zitOpenRepositoryCount"
                 },
                 {
-                    "command": "zit.annotate",
+                    "command": "zit.praise",
                     "when": "zitOpenRepositoryCount"
                 },
                 {

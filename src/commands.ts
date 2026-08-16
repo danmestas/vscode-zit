@@ -74,7 +74,7 @@ type CommandKey =
     | 'openFileFromUri'
     | 'openFiles'
     | 'openResource'
-    | 'annotate'
+    | 'praise'
     | 'pull'
     | 'push'
     | 'pushTo'
@@ -1137,7 +1137,7 @@ export class CommandCenter {
     }
 
     @command()
-    async annotate(): Promise<void> {
+    async praise(): Promise<void> {
         const editor = window.activeTextEditor;
         if (!editor) {
             return;
