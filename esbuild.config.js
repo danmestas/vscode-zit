@@ -17,7 +17,7 @@ function buildConfig(entryPoint, outfile) {
 }
 
 async function main() {
-  const results = await Promise.all([
+  await Promise.all([
     esbuild.build(
       {...buildConfig('./src/main.ts', 'out/main.js')}
     ),
@@ -27,11 +27,8 @@ async function main() {
     esbuild.build(
       {...buildConfig('./src/gitExport.ts', 'out/gitExport.js')}
     ),
-    esbuild.build(
-      {...buildConfig('./media/preview.ts', 'media/preview.js'), platform:'browser', format: 'iife'}
-    ),
   ])
-  console.log('fossil extension js files are ready')
+  console.log('Zit extension JavaScript files are ready')
 }
 
 main()

@@ -1,256 +1,237 @@
-import { window, commands } from 'vscode';
+import { commands, window } from 'vscode';
 import * as sinon from 'sinon';
 import {
     fakeExecutionResult,
-    fakeFossilBranch,
-    fakeFossilChanges,
-    fakeFossilStatus,
-    fakeRawExecutionResult,
-    fakeUpdateResult,
     getExecStub,
     getModel,
-    getRawExecStub,
     getRepository,
     statusBarCommands,
-    stubFossilConfig,
+    stubZitConfig,
 } from './common';
 import * as assert from 'assert/strict';
-import { Suite, after, before } from 'mocha';
-import { Reason } from '../../fossilExecutable';
+import { Suite, suiteTeardown, suiteSetup } from 'mocha';
+import { Reason } from '../../zitExecutable';
+
+interface ConfigurationHandler {
+    onDidChangeConfiguration(event: {
+        affectsConfiguration(key: string): boolean;
+    }): Promise<void> | void;
+}
 
 export function StatusBarSuite(this: Suite): void {
     let fakeTimers: sinon.SinonFakeTimers;
-    const N = new Date('2024-11-23T16:51:31.000Z');
+    const now = new Date('2024-11-23T16:51:31.000Z');
 
-    before(() => {
+    suiteSetup(async () => {
+        await getRepository().updateStatus('Test: status bar setup' as Reason);
         fakeTimers = sinon.useFakeTimers({
-            now: N,
+            now,
             shouldClearNativeTimers: true,
         });
     });
 
-    after(() => {
-        fakeTimers.restore();
-    });
+    suiteTeardown(() => fakeTimers.restore());
 
-    test('Status Bar Exists', async () => {
+    test('shows Zit branch and sync commands', () => {
         const [branchBar, syncBar] = statusBarCommands();
-        assert.equal(branchBar.command, 'fossil.branchChange');
+        assert.equal(branchBar.command, 'zit.branchChange');
         assert.equal(branchBar.title, '$(git-branch) trunk');
         assert.equal(branchBar.tooltip?.split('\n').pop(), 'Change Branch...');
         assert.deepEqual(branchBar.arguments, [getRepository()]);
-        assert.equal(syncBar.command, 'fossil.update');
+        assert.equal(syncBar.command, 'zit.sync');
         assert.equal(syncBar.title, '$(sync)');
-        assert.ok(syncBar.tooltip);
-        assert.match(
-            syncBar.tooltip,
-            /^Next sync \d\d:\d\d:\d\d\nNone\. Already up-to-date\nUpdate$/
-        );
+        assert.match(syncBar.tooltip!, /^Next sync \d\d:\d\d:\d\d\nSync$/);
         assert.deepEqual(syncBar.arguments, [getRepository()]);
     });
 
-    test('Sync', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const syncCall = execStub
-            .withArgs(['sync'])
-            .resolves(fakeExecutionResult());
-        const changesCall = fakeFossilChanges(execStub, '18 files modified.');
-        await commands.executeCommand('fossil.sync');
-        sinon.assert.calledOnceWithExactly(syncCall, ['sync']);
-        sinon.assert.calledOnceWithExactly(
-            changesCall,
-            ['update', '--dry-run'],
-            'Triggered by previous operation' as Reason,
-            { logErrors: false }
+    test('runs one Zit sync and reports success', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
         );
-        const nextSyncString = new Date(N.getTime() + 3 * 60 * 1000)
-            .toTimeString()
-            .split(' ')[0];
+        const sync = exec.withArgs(['sync']).resolves(fakeExecutionResult());
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('');
+        await commands.executeCommand('zit.sync');
 
-        const syncBar = statusBarCommands()[1];
-        assert.equal(syncBar.title, '$(sync) 18');
-        assert.equal(
-            syncBar.tooltip,
-            `Next sync ${nextSyncString}\n18 files modified.\nUpdate`
+        sinon.assert.calledOnce(sync);
+        assert.deepEqual(sync.firstCall.args[0], ['sync']);
+        assert.equal(sync.firstCall.args[1], undefined);
+        assert.ok(sync.firstCall.args[2]?.signal instanceof AbortSignal);
+        assert.match(
+            statusBarCommands()[1].tooltip!,
+            /^Next sync \d\d:\d\d:\d\d\nSync$/
         );
     });
 
-    test('Icon spins when sync is in progress', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const syncStub = execStub.withArgs(['sync']).callsFake(async () => {
-            const syncBar = statusBarCommands()[1];
-            assert.equal(syncBar.title, '$(sync~spin)');
+    test('spins while Zit sync is running', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
+        );
+        const sync = exec.withArgs(['sync']).callsFake(async () => {
+            assert.equal(statusBarCommands()[1].title, '$(sync~spin)');
             return fakeExecutionResult();
         });
-        const changeStub = fakeFossilChanges(
-            execStub,
-            'None. Already up-to-date'
-        );
-        await commands.executeCommand('fossil.sync');
-        sinon.assert.calledOnce(syncStub);
-        sinon.assert.calledOnce(changeStub);
-        sinon.assert.calledTwice(execStub);
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('');
+
+        await commands.executeCommand('zit.sync');
+
+        sinon.assert.calledOnce(sync);
     });
 
-    test('Icon spins when update is in progress', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const syncStub = execStub.withArgs(['update']).callsFake(async () => {
-            const syncBar = statusBarCommands()[1];
-            assert.equal(syncBar.title, '$(sync~spin)');
-            return fakeUpdateResult();
-        });
-        const changeStub = fakeFossilChanges(
-            execStub,
-            'None. Already up-to-date'
+    test('shows Zit sync failure text', async () => {
+        this.ctx.sandbox.stub(window, 'showErrorMessage').resolves(undefined);
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
         );
-        const statusStub = fakeFossilStatus(execStub, '');
-        const branchStub = fakeFossilBranch(execStub, 'trunk');
-        await commands.executeCommand('fossil.update');
-        sinon.assert.calledOnce(syncStub);
-        sinon.assert.notCalled(changeStub);
-        sinon.assert.calledOnce(statusStub);
-        sinon.assert.calledOnce(branchStub);
-        sinon.assert.calledThrice(execStub);
-    });
-
-    test('Error in tooltip when `sync` failed', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const syncStub = execStub
-            .withArgs(['sync'])
-            .resolves(
-                fakeExecutionResult({ stderr: 'test failure', exitCode: 1 })
-            );
-        const changeStub = fakeFossilChanges(
-            execStub,
-            'None. Already up-to-date'
-        );
-        await commands.executeCommand('fossil.sync');
-        sinon.assert.calledOnce(syncStub);
-        sinon.assert.notCalled(changeStub); // sync failed, nothing changed
-        sinon.assert.calledOnce(execStub);
-        const syncBar = statusBarCommands()[1];
-        assert.ok(syncBar.tooltip);
-        assert.match(
-            syncBar.tooltip,
-            /^Next sync \d\d:\d\d:\d\d\nSync error: test failure\nNone\. Already up-to-date\nUpdate$/
-        );
-    });
-
-    test('Local repository syncing', async () => {
-        const rawExecStub = getRawExecStub(this.ctx.sandbox);
-        const syncStub = rawExecStub.withArgs(['sync']).resolves(
-            fakeRawExecutionResult({
-                stderr: 'Usage: fossil sync URL\n',
+        const sync = exec.withArgs(['sync']).resolves(
+            fakeExecutionResult({
+                stderr: 'network unavailable',
                 exitCode: 1,
             })
         );
-        const sem = this.ctx.sandbox
-            .stub(window, 'showErrorMessage')
-            .resolves();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const changeStub = fakeFossilChanges(
-            execStub,
-            'None. Already up-to-date'
-        );
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('');
 
-        await commands.executeCommand('fossil.sync');
-        sinon.assert.notCalled(changeStub);
-        sinon.assert.calledOnce(sem);
-        sinon.assert.calledOnce(syncStub);
-        const syncBar = statusBarCommands()[1];
-        assert.ok(syncBar.tooltip);
-        assert.match(
-            syncBar.tooltip,
-            /^Next sync \d\d:\d\d:\d\d\nrepository with no remote\nNone\. Already up-to-date\nUpdate$/
-        );
-    });
+        await commands.executeCommand('zit.sync');
 
-    test('Nonsensical "change" is ignored', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const syncCall = execStub
-            .withArgs(['sync'])
-            .resolves(fakeExecutionResult());
-        const changesCall = execStub
-            .withArgs(['update', '--dry-run'])
-            .resolves(fakeExecutionResult({ stdout: 'bad changes' }));
-        await commands.executeCommand('fossil.sync');
-        sinon.assert.calledOnceWithExactly(syncCall, ['sync']);
-        sinon.assert.calledOnceWithExactly(
-            changesCall,
-            ['update', '--dry-run'],
-            'Triggered by previous operation' as Reason,
-            { logErrors: false }
-        );
-        const syncBar = statusBarCommands()[1];
-        assert.equal(syncBar.title, '$(sync)');
-        assert.ok(syncBar.tooltip);
-        assert.match(
-            syncBar.tooltip,
-            /^Next sync \d\d:\d\d:\d\d\nunknown changes\nUpdate$/
-        );
-
-        // restore changes
-        changesCall.resolves(fakeUpdateResult());
-        await commands.executeCommand('fossil.sync');
+        sinon.assert.calledOnce(sync);
         assert.match(
             statusBarCommands()[1].tooltip!,
-            /^Next sync \d\d:\d\d:\d\d\nNone. Already up-to-date\nUpdate$/
+            /^Next sync \d\d:\d\d:\d\d\nSync error: network unavailable\nSync$/
         );
     });
 
-    const changeAutoSyncIntervalSeconds = (seconds: number) => {
-        const configStub = stubFossilConfig(this.ctx.sandbox);
-        const getIntervalStub = configStub.get
+    test('identifies a repository with no remote', async () => {
+        this.ctx.sandbox.stub(window, 'showErrorMessage').resolves(undefined);
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
+        );
+        exec.withArgs(['sync']).resolves(
+            fakeExecutionResult({
+                stderr: 'zit sync: no remote is set',
+                exitCode: 1,
+            })
+        );
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('');
+
+        await commands.executeCommand('zit.sync');
+
+        assert.match(
+            statusBarCommands()[1].tooltip!,
+            /^Next sync \d\d:\d\d:\d\d\nrepository with no remote\nSync$/
+        );
+    });
+
+    async function changeAutoSyncIntervalSeconds(
+        sandbox: sinon.SinonSandbox,
+        seconds: number
+    ): Promise<void> {
+        const config = stubZitConfig(sandbox);
+        const interval = config.get
             .withArgs('autoSyncInterval')
             .returns(seconds);
-        const model = getModel();
-        model['onDidChangeConfiguration']({
-            affectsConfiguration: (key: string) =>
-                ['fossil.autoSyncInterval', 'fossil'].includes(key),
-        });
-        sinon.assert.calledOnce(getIntervalStub);
-    };
+        const exec = getExecStub(sandbox);
+        exec.withArgs(['sync']).resolves(fakeExecutionResult());
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
+        );
+        await getRepository().periodicSync();
+        interval.resetHistory();
+        const nativeSetting = exec
+            .withArgs(['settings', 'autosync', seconds ? 'on' : 'off'])
+            .resolves(fakeExecutionResult());
+        const model = getModel() as unknown as ConfigurationHandler;
 
-    test('Can change `fossil.autoSyncInterval` to 5 minutes', async () => {
-        changeAutoSyncIntervalSeconds(5 * 60);
-        const nextSyncString = new Date(N.getTime() + 5 * 60 * 1000)
+        await model.onDidChangeConfiguration({
+            affectsConfiguration: key =>
+                ['zit.autoSyncInterval', 'zit'].includes(key),
+        });
+
+        sinon.assert.calledOnce(interval);
+        sinon.assert.calledOnce(nativeSetting);
+    }
+
+    test('persists enabled Zit autosync after an explicit setting change', async () => {
+        await changeAutoSyncIntervalSeconds(this.ctx.sandbox, 5 * 60);
+        const next = new Date(now.getTime() + 5 * 60 * 1000)
             .toTimeString()
             .split(' ')[0];
-        const syncBar = statusBarCommands()[1];
-        assert.equal(syncBar.title, '$(sync)');
+
+        assert.equal(statusBarCommands()[1].tooltip, `Next sync ${next}\nSync`);
+    });
+
+    test('persists disabled Zit autosync after an explicit setting change', async () => {
+        await changeAutoSyncIntervalSeconds(this.ctx.sandbox, 0);
+
         assert.equal(
-            syncBar.tooltip,
-            `Next sync ${nextSyncString}\nNone. Already up-to-date\nUpdate`
+            statusBarCommands()[1].tooltip,
+            'Auto sync disabled\nSync'
         );
     });
 
-    test('Can change `fossil.autoSyncInterval` to 0 minutes (disable)', async () => {
-        changeAutoSyncIntervalSeconds(0);
-        const syncBar = statusBarCommands()[1];
-        assert.equal(syncBar.title, '$(sync)');
-        assert.equal(
-            syncBar.tooltip,
-            `Auto sync disabled\nNone. Already up-to-date\nUpdate`
+    test('periodic sync runs exact Zit argv without interactive errors', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'https://example.com/repo.zit\n' })
+        );
+        const sync = exec.withArgs(['sync']).resolves(fakeExecutionResult());
+
+        await getRepository().periodicSync();
+
+        sinon.assert.calledOnceWithExactly(sync, ['sync'], undefined, {
+            logErrors: false,
+        });
+    });
+
+    test('periodic sync skips repositories without a remote and reschedules', async () => {
+        const repository = getRepository();
+        const internal = repository as unknown as {
+            autoSyncTimer?: unknown;
+        };
+        const previousTimer = internal.autoSyncTimer;
+        const exec = getExecStub(this.ctx.sandbox);
+        const remote = exec
+            .withArgs(['remote'])
+            .resolves(fakeExecutionResult({ stdout: 'no remote set\n' }));
+        const sync = exec.withArgs(sinon.match.array.startsWith(['sync']));
+        const error = this.ctx.sandbox.stub(window, 'showErrorMessage');
+
+        await repository.periodicSync();
+
+        sinon.assert.calledOnceWithExactly(remote, ['remote']);
+        sinon.assert.notCalled(sync);
+        sinon.assert.notCalled(error);
+        assert.ok(internal.autoSyncTimer);
+        assert.notEqual(internal.autoSyncTimer, previousTimer);
+        assert.match(
+            statusBarCommands()[1].tooltip!,
+            /^Next sync \d\d:\d\d:\d\d\nrepository with no remote\nSync$/
         );
     });
 
-    test('Periodic syncing calls `Repository.periodicSync`', async () => {
-        const timeoutStub = sinon
-            .stub(global, 'setTimeout')
-            .callThrough()
-            .withArgs(sinon.match.func, 3 * 60 * 1000);
-        changeAutoSyncIntervalSeconds(3 * 60);
-        sinon.assert.calledOnce(timeoutStub);
+    test('shows unborn unknown branch state without a check-in', () => {
+        const repository = getRepository();
+        const internal = repository as unknown as {
+            _currentBranch: string | undefined;
+            _zitStatus: { checkin?: string };
+            statusBar: { update(): void };
+        };
+        const previousBranch = internal._currentBranch;
+        const previousStatus = internal._zitStatus;
+        internal._currentBranch = undefined;
+        internal._zitStatus = { ...previousStatus, checkin: undefined };
 
-        const execStub = getExecStub(this.ctx.sandbox);
-        const changesStub = fakeFossilChanges(execStub);
-        const syncCall = execStub
-            .withArgs(['sync'])
-            .resolves(fakeExecutionResult());
-        // calling `Repository.periodicSync`
-        await (timeoutStub.firstCall.args[0] as () => () => Promise<void>)();
-        sinon.assert.calledOnce(changesStub);
-        sinon.assert.calledOnce(syncCall);
-        sinon.assert.calledTwice(execStub);
+        try {
+            internal.statusBar.update();
+            const branch = statusBarCommands()[0];
+            assert.equal(branch.title, '$(git-branch) unknown');
+            assert.equal(branch.tooltip, 'no check-ins yet\nChange Branch...');
+        } finally {
+            internal._currentBranch = previousBranch;
+            internal._zitStatus = previousStatus;
+            internal.statusBar.update();
+        }
     });
 }

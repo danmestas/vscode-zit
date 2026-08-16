@@ -1,4 +1,4 @@
-import { FossilRoot, FileStatus, ResourceStatus } from './openedRepository';
+import { ZitRoot, FileStatus, ResourceStatus } from './openedRepository';
 import {
     Uri,
     SourceControlResourceGroup,
@@ -6,69 +6,62 @@ import {
     Disposable,
 } from 'vscode';
 import * as path from 'path';
-import { FossilResource } from './repository';
+import { ZitResource } from './repository';
 
 import { localize } from './main';
 
 interface IGroupStatusesParams {
-    repositoryRoot: FossilRoot;
+    repositoryRoot: ZitRoot;
     statusGroups: IStatusGroups;
     fileStatuses: FileStatus[];
 }
 
 export interface IStatusGroups {
-    conflict: FossilResourceGroup;
-    staging: FossilResourceGroup;
-    working: FossilResourceGroup;
-    untracked: FossilResourceGroup;
+    added: ZitResourceGroup;
+    working: ZitResourceGroup;
+    untracked: ZitResourceGroup;
 }
 
-export type FossilResourceId = keyof IStatusGroups;
+export type ZitResourceId = keyof IStatusGroups;
 
 export function createEmptyStatusGroups(scm: SourceControl): IStatusGroups {
-    const conflictGroup = new FossilResourceGroup(
+    const addedGroup = new ZitResourceGroup(
         scm,
-        'conflict',
-        localize('merge conflicts', 'Unresolved Conflicts')
+        'added',
+        localize('added files', 'Added Files')
     );
-    const stagingGroup = new FossilResourceGroup(
-        scm,
-        'staging',
-        localize('staged changes', 'Staged Changes')
-    ) as FossilResourceGroup;
-    const workingGroup = new FossilResourceGroup(
+    const workingGroup = new ZitResourceGroup(
         scm,
         'working',
         localize('changes', 'Changes')
-    ) as FossilResourceGroup;
-    const untrackedGroup = new FossilResourceGroup(
+    );
+    const untrackedGroup = new ZitResourceGroup(
         scm,
         'untracked',
         localize('untracked files', 'Untracked Files')
-    ) as FossilResourceGroup;
+    );
 
     return {
-        conflict: conflictGroup,
-        staging: stagingGroup,
+        added: addedGroup,
         working: workingGroup,
         untracked: untrackedGroup,
     };
 }
 
-export interface IFossilResourceGroup extends SourceControlResourceGroup {
-    resourceStates: FossilResource[];
+export interface IZitResourceGroup extends SourceControlResourceGroup {
+    resourceStates: ZitResource[];
 }
 
-export class FossilResourceGroup {
-    private readonly _uriToResource: Map<string, FossilResource>;
-    private readonly _vscode_group: IFossilResourceGroup;
+export class ZitResourceGroup {
+    private readonly _uriToResource: Map<string, ZitResource>;
+    private readonly _vscode_group: IZitResourceGroup;
     get disposable(): Disposable {
         return this._vscode_group;
     }
-    get resourceStates(): FossilResource[] {
+    get resourceStates(): ZitResource[] {
         return this._vscode_group.resourceStates;
     }
-    getResource(uri: Uri): FossilResource | undefined {
+    getResource(uri: Uri): ZitResource | undefined {
         return this._uriToResource.get(uri.toString());
     }
     includesUri(uri: Uri): boolean {
@@ -86,99 +79,63 @@ export class FossilResourceGroup {
 
     constructor(
         sourceControl: SourceControl,
-        id: FossilResourceId,
+        id: ZitResourceId,
         readonly label: string // translated string
     ) {
-        this._uriToResource = new Map<string, FossilResource>();
+        this._uriToResource = new Map<string, ZitResource>();
         this._vscode_group = sourceControl.createResourceGroup(
             id,
             label
-        ) as IFossilResourceGroup;
+        ) as IZitResourceGroup;
         this._vscode_group.hideWhenEmpty = true;
     }
 
-    is(id: FossilResourceId): boolean {
+    is(id: ZitResourceId): boolean {
         return this._vscode_group.id === id;
     }
 
-    updateResources(resources: FossilResource[]): void {
+    updateResources(resources: ZitResource[]): void {
         this._vscode_group.resourceStates = resources;
         this._uriToResource.clear();
         resources.forEach(resource =>
             this._uriToResource.set(resource.resourceUri.toString(), resource)
         );
     }
-
-    intersect(resources: FossilResource[]): void {
-        // existing resources must be updated
-        // because resource status might change
-        for (const res of resources) {
-            this._uriToResource.delete(res.resourceUri.toString());
-            res.resourceGroup = this;
-        }
-        const intersectionResources: FossilResource[] = [
-            ...resources,
-            ...this._uriToResource.values(),
-        ];
-        this.updateResources(intersectionResources);
-    }
-
-    except(resources_to_exclude: FossilResource[]): void {
-        for (const res of resources_to_exclude) {
-            this._uriToResource.delete(res.resourceUri.toString());
-        }
-        this.updateResources([...this._uriToResource.values()]);
-    }
 }
 
 export function groupStatuses({
     repositoryRoot,
-    statusGroups: { conflict, staging, working, untracked },
+    statusGroups: { added, working, untracked },
     fileStatuses,
 }: IGroupStatusesParams): void {
-    const workingDirectoryResources: FossilResource[] = [];
-    const stagingResources: FossilResource[] = [];
-    const conflictResources: FossilResource[] = [];
-    const untrackedResources: FossilResource[] = [];
+    const addedResources: ZitResource[] = [];
+    const workingResources: ZitResource[] = [];
+    const untrackedResources: ZitResource[] = [];
 
     const chooseResourcesAndGroup = (
-        uriString: Uri,
         status: ResourceStatus
-    ): [FossilResource[], FossilResourceGroup] => {
+    ): [ZitResource[], ZitResourceGroup] => {
+        if (status === ResourceStatus.ADDED) {
+            return [addedResources, added];
+        }
         if (status === ResourceStatus.EXTRA) {
             return [untrackedResources, untracked];
         }
-
-        if (status === ResourceStatus.CONFLICT) {
-            return [conflictResources, conflict];
-        }
-        return staging.includesUri(uriString)
-            ? [stagingResources, staging]
-            : [workingDirectoryResources, working];
+        return [workingResources, working];
     };
-
-    const seenUriStrings: Map<string, boolean> = new Map();
 
     for (const raw of fileStatuses) {
         const uri = Uri.file(path.join(repositoryRoot, raw.path));
-        const uriString = uri.toString();
-        seenUriStrings.set(uriString, true);
-        const renameUri = raw.rename
-            ? Uri.file(path.join(repositoryRoot, raw.rename))
-            : undefined;
-        const [resources, group] = chooseResourcesAndGroup(uri, raw.status);
-        resources.push(
-            new FossilResource(group, uri, raw.status, raw.klass, renameUri)
-        );
+        const [resources, group] = chooseResourcesAndGroup(raw.status);
+        resources.push(new ZitResource(group, uri, raw.status, raw.klass));
     }
 
-    conflict.updateResources(conflictResources);
-    staging.updateResources(stagingResources);
-    working.updateResources(workingDirectoryResources);
+    added.updateResources(addedResources);
+    working.updateResources(workingResources);
     untracked.updateResources(untrackedResources);
 }
 
 export const isResourceGroup = (
-    obj: FossilResource | SourceControlResourceGroup
+    obj: ZitResource | SourceControlResourceGroup
 ): obj is SourceControlResourceGroup =>
     (<SourceControlResourceGroup>obj).resourceStates !== undefined;

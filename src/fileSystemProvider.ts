@@ -21,7 +21,7 @@ import {
 import { debounce, throttle } from './decorators';
 import { Model, ModelChangeEvent, OriginalResourceChangeEvent } from './model';
 import { eventToPromise, filterEvent, toDisposable } from './util';
-import { fromFossilUri, toFossilUri } from './uri';
+import { fromZitUri, toZitUri } from './uri';
 import { sep } from 'path';
 export const EmptyDisposable = toDisposable(() => null);
 
@@ -69,7 +69,7 @@ function not_implemented(): never {
     throw new Error('Method not implemented.');
 }
 
-export class FossilFileSystemProvider implements FileSystemProvider {
+export class ZitFileSystemProvider implements FileSystemProvider {
     private _onDidChangeFile = new EventEmitter<FileChangeEvent[]>();
     readonly onDidChangeFile: Event<FileChangeEvent[]> =
         this._onDidChangeFile.event;
@@ -86,7 +86,7 @@ export class FossilFileSystemProvider implements FileSystemProvider {
                 this.onDidChangeOriginalResource,
                 this
             ),
-            workspace.registerFileSystemProvider('fossil', this, {
+            workspace.registerFileSystemProvider('zit', this, {
                 isReadonly: true,
                 isCaseSensitive: true,
             })
@@ -107,10 +107,10 @@ export class FossilFileSystemProvider implements FileSystemProvider {
             return;
         }
 
-        const fossilUri = toFossilUri(uri);
+        const zitUri = toZitUri(uri);
         this.mtime = new Date().getTime();
         this._onDidChangeFile.fire([
-            { type: FileChangeType.Changed, uri: fossilUri },
+            { type: FileChangeType.Changed, uri: zitUri },
         ]);
     }
 
@@ -179,9 +179,9 @@ export class FossilFileSystemProvider implements FileSystemProvider {
 
         this.cache.set(cacheKey, cacheValue);
 
-        const content = await repository.cat(fromFossilUri(uri));
+        const content = await repository.cat(fromZitUri(uri));
         if (content !== undefined) {
-            return content;
+            return new Uint8Array(content);
         }
         throw FileSystemError.FileNotFound();
     }
@@ -213,15 +213,13 @@ export class FossilFileSystemProvider implements FileSystemProvider {
         const cache = new Map<string, CacheRow>();
 
         for (const row of this.cache.values()) {
-            const { path } = fromFossilUri(row.uri);
+            const { path } = fromZitUri(row.uri);
             const isOpen = workspace.textDocuments
                 .filter(d => d.uri.scheme === 'file')
                 .some(d => pathEquals(d.uri.fsPath, path));
 
             if (isOpen || now - row.timestamp < THREE_MINUTES) {
                 cache.set(row.uri.toString(), row);
-            } else {
-                // TODO: should fire delete events?
             }
         }
 

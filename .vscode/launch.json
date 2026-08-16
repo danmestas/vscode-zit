@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "configurations": [
         {
-            "name": "Fossil Extension (--disable-extensions)",
+            "name": "Zit Extension (--disable-extensions)",
             "type": "extensionHost",
             "request": "launch",
             "runtimeExecutable": "${execPath}",
@@ -18,7 +18,7 @@
             "preLaunchTask": "npm"
         },
         {
-            "name": "Fossil Extension",
+            "name": "Zit Extension",
             "type": "extensionHost",
             "request": "launch",
             "runtimeExecutable": "${execPath}",
@@ -32,7 +32,7 @@
             "preLaunchTask": "npm"
         },
         {
-            "name": "Fossil Tests",
+            "name": "Zit Tests",
             "type": "extensionHost",
             "request": "launch",
             "runtimeExecutable": "${execPath}",

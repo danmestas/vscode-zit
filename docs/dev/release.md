@@ -1,30 +1,32 @@
-# How to release vscode-fossil extension
+# Releasing the Zit extension
 
-## Describe the changes
-1. Update version in `package.json`
-1. Update `CHANGELOG.md`
+## Prepare
 
+1. Update the version in `package.json` and its lockfile.
+2. Update `CHANGELOG.md` with user-visible changes.
+3. Confirm that CI builds current Zit trunk with Zig 0.16 and `zig build --release=fast`.
 
-## Ensure everything is working
-1. Run tests: `npm run test`
-1. Remove out directory: `rm -rf out`
-1. Create package (.vsix file): `npm run package`
-1. Ensure all files are there: `unzip -l fossil-#.#.#.vsix`. There should be FOUR .js files.
+## Qualify locally
 
+Run the same gates as CI:
 
-## Make commits
+```sh
+npm ci
+npm run lint -- --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
+npm run coverage-ci /tmp/vscode-zit-step-summary.md
+npm run grammar-test
+rm -rf out
+npm run package
+```
 
-1. Create a brunch `git switch --create $USER-release-#.#.#`
-1. Make a commit 'release: #.#.#'
-1. Make a pull request
-1. "Merge and rebase" on a successful pull request
-1. Switch to `master`
-1. Tag `git tag v#.#.# && git push origin $_`
+On Linux, run coverage with `xvfb-run -a`. Then install the generated `zit-<version>.vsix` and smoke-test repository discovery, status groups, add, commit, historical diff, update, merge diagnostics, branch/tag/stash, sync, Git export, and missing-binary guidance in an Extension Development Host.
 
+## Publish
 
-## Release
-1. Download .vsix file from github "Releases"*
-1. Upload it to https://marketplace.visualstudio.com/manage/publishers/koog1000
-1. Upload it to https://open-vsx.org/extension/koog1000/fossil
+1. Open a release pull request and require all checks to pass.
+2. Merge the release through the normal protected-branch process.
+3. Tag the merged revision with `v<version>`.
+4. Verify that the release workflow attached `zit-<version>.vsix`.
+5. Publish that exact verified VSIX through the configured extension registries.
 
-Storing tokens
+Never publish a VSIX produced from a dirty tree or a run that skipped the integration or packaging gates.

@@ -1,0 +1,97 @@
+name: Zit
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  main:
+    name: Run Zit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      security-events: write
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          cache: npm
+          node-version: 24
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint --
+          --format @microsoft/eslint-formatter-sarif
+          --output-file eslint-results.sarif
+        continue-on-error: true
+
+      - name: Upload analysis results to GitHub
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: eslint-results.sarif
+          wait-for-processing: true
+
+      - name: Bootstrap Zit 0.1.3
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive="$RUNNER_TEMP/zit-bootstrap.tar.gz"
+          curl -fsSL \
+            https://fossil.craftdesign.group/zit/uv/releases/0.1.3/zit-0.1.3-linux-x86_64.tar.gz \
+            -o "$archive"
+          echo "cf4643218af87dc4c032e60ca9da0e2b768ce11c643ed74284de4339b0468979  $archive" \
+            | sha256sum --check
+          mkdir "$RUNNER_TEMP/zit-bootstrap"
+          tar -xzf "$archive" --strip-components=1 -C "$RUNNER_TEMP/zit-bootstrap"
+          "$RUNNER_TEMP/zit-bootstrap/zit" version
+          "$RUNNER_TEMP/zit-bootstrap/zit" clone --once \
+            https://fossil.craftdesign.group/zit \
+            "$RUNNER_TEMP/zit-source"
+
+      - name: Set up Zig 0.16
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Build current Zit trunk
+        shell: bash
+        run: |
+          set -euxo pipefail
+          zig version | grep -E '^0\.16\.'
+          cd "$RUNNER_TEMP/zit-source"
+          zig build --release=fast
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 zig-out/bin/zit "$HOME/.local/bin/zit"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Zit
+        shell: bash
+        run: |
+          set -euo pipefail
+          zit version | tee "$RUNNER_TEMP/zit-version.txt"
+          grep -E '^zit [0-9]+\.[0-9]+\.[0-9]+' "$RUNNER_TEMP/zit-version.txt"
+
+      - name: Run code tests and coverage
+        run: xvfb-run -a npm run coverage-ci "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Pikchr grammar tests
+        run: npm run grammar-test
+
+      - name: Package
+        run: rm -rf out && npm run package
+
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: zit-*.*.*.vsix

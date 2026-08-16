@@ -1,47 +1,46 @@
 import {
-    Uri,
+    CancellationError,
+    commands,
     Command,
-    EventEmitter,
+    Disposable,
     Event,
+    EventEmitter,
+    ProgressLocation,
+    RelativePattern,
     scm,
     SourceControl,
-    SourceControlResourceState,
     SourceControlResourceDecorations,
-    Disposable,
-    ProgressLocation,
+    SourceControlResourceState,
+    TextDocumentShowOptions,
+    Uri,
     window,
     workspace,
-    commands,
-    RelativePattern,
-    TextDocumentShowOptions,
 } from 'vscode';
 import {
     AnyPath,
     BranchDetails,
     Commit,
     CommitDetails,
-    ConfigKey,
-    FossilBranch,
-    FossilCheckin,
-    FossilClass,
-    FossilCommitMessage,
-    FossilHash,
-    FossilRemote,
-    FossilRemoteName,
-    FossilRoot,
-    FossilStatus,
-    FossilTag,
-    FossilUndoCommand,
+    ZitBranch,
+    ZitCheckin,
+    ZitClass,
+    ZitCommitMessage,
+    ZitHash,
+    ZitRoot,
+    ZitStatus,
+    ZitTag,
     MergeAction,
     OpenedRepository,
-    Praise,
+    Annotation,
     RelativePath,
     ResourceStatus,
     StashID,
     StashItem,
     StatusString,
+    SyncCredentials,
     TimelineOptions,
     UserPath,
+    ZitURI,
 } from './openedRepository';
 import {
     anyEvent,
@@ -57,14 +56,14 @@ import typedConfig, { AutoSyncIntervalMs } from './config';
 
 import * as path from 'path';
 import {
-    FossilResourceGroup,
+    ZitResourceGroup,
     createEmptyStatusGroups,
     IStatusGroups,
     groupStatuses,
 } from './resourceGroups';
 import * as interaction from './interaction';
 import type { InteractionAPI, NewBranchOptions } from './interaction';
-import { FossilUriParams, toFossilUri } from './uri';
+import { ZitUriParams, toZitEmptyUri, toZitUri } from './uri';
 
 import { localize } from './main';
 import type {
@@ -72,27 +71,25 @@ import type {
     ExecFailure,
     ExecResult,
     Reason,
-} from './fossilExecutable';
+} from './zitExecutable';
 import { ThrottlingQueue, queue } from './throttlingQueue';
 const iconsRootPath = path.join(path.dirname(__dirname), 'resources', 'icons');
 
 type AvailableIcons =
     | 'status-added'
-    | 'status-clean'
-    | 'status-conflict'
     | 'status-deleted'
-    | 'status-ignored'
     | 'status-missing'
     | 'status-modified'
-    | 'status-renamed'
     | 'status-untracked';
 
 function getIconUri(iconName: AvailableIcons, theme: 'dark' | 'light'): Uri {
     return Uri.file(path.join(iconsRootPath, theme, `${iconName}.svg`));
 }
 
-export interface LogEntriesOptions
-    extends Omit<TimelineOptions, 'filePath' | 'limit'> {
+export interface LogEntriesOptions extends Omit<
+    TimelineOptions,
+    'filePath' | 'limit'
+> {
     readonly fileUri?: Uri;
     readonly limit?: TimelineOptions['limit'];
 }
@@ -104,11 +101,11 @@ export const enum RepositoryState {
 
 type ThemeName = 'light' | 'dark';
 
-export class FossilResource implements SourceControlResourceState {
+export class ZitResource implements SourceControlResourceState {
     @memoize
     get command(): Command {
         return {
-            command: 'fossil.openResource',
+            command: 'zit.openResource',
             title: localize('open', 'Open'),
             arguments: [this],
         };
@@ -123,8 +120,6 @@ export class FossilResource implements SourceControlResourceState {
             case ResourceStatus.DELETED:
             case ResourceStatus.MISSING:
             case ResourceStatus.MODIFIED:
-            case ResourceStatus.RENAMED:
-            case ResourceStatus.CONFLICT:
             default:
                 return true;
         }
@@ -133,12 +128,9 @@ export class FossilResource implements SourceControlResourceState {
     get original(): Uri {
         return this._resourceUri;
     }
-    get renameResourceUri(): Uri | undefined {
-        return this._renameResourceUri;
-    }
     @memoize
     get resourceUri(): Uri {
-        return this.renameResourceUri ?? this._resourceUri;
+        return this._resourceUri;
     }
 
     private static Icons: {
@@ -149,23 +141,19 @@ export class FossilResource implements SourceControlResourceState {
             [ResourceStatus.MISSING]: getIconUri('status-missing', 'light'),
             [ResourceStatus.ADDED]: getIconUri('status-added', 'light'),
             [ResourceStatus.DELETED]: getIconUri('status-deleted', 'light'),
-            [ResourceStatus.RENAMED]: getIconUri('status-renamed', 'light'),
             [ResourceStatus.EXTRA]: getIconUri('status-untracked', 'light'),
-            [ResourceStatus.CONFLICT]: getIconUri('status-conflict', 'light'),
         },
         dark: {
             [ResourceStatus.MODIFIED]: getIconUri('status-modified', 'dark'),
             [ResourceStatus.MISSING]: getIconUri('status-missing', 'dark'),
             [ResourceStatus.ADDED]: getIconUri('status-added', 'dark'),
             [ResourceStatus.DELETED]: getIconUri('status-deleted', 'dark'),
-            [ResourceStatus.RENAMED]: getIconUri('status-renamed', 'dark'),
             [ResourceStatus.EXTRA]: getIconUri('status-untracked', 'dark'),
-            [ResourceStatus.CONFLICT]: getIconUri('status-conflict', 'dark'),
         },
     };
 
     private getIconPath(theme: ThemeName): Uri {
-        return FossilResource.Icons[theme][this.status];
+        return ZitResource.Icons[theme][this.status];
     }
 
     get contextValue(): string | undefined {
@@ -188,54 +176,26 @@ export class FossilResource implements SourceControlResourceState {
     }
 
     constructor(
-        public resourceGroup: FossilResourceGroup,
+        public resourceGroup: ZitResourceGroup,
         private readonly _resourceUri: Uri,
         public readonly status: ResourceStatus,
-        private readonly _tooltip: FossilClass,
-        private readonly _renameResourceUri?: Uri
+        private readonly _tooltip: ZitClass
     ) {}
 }
 
 type SideEffects = {
-    /**
-     * Files could change
-     * Only execute `fossil status`
-     */
+    /** Files or current branch could change. */
     status?: true;
-    /**
-     * Information about remote could change,
-     * or local "head" has changed
-     * Only execute `fossil update --dry-run', '--latest`
-     */
-    changes?: true;
-    /**
-     * Branch could be changed
-     * Only execute `fossil branch current`
-     */
-    branch?: true;
-    /**
-     * Tooltip text to show in the statusBar. Currently unused.
-     */
+    /** Tooltip text shown while an operation runs. */
     syncText?: string;
 };
 
 const UpdateStatus: SideEffects = { status: true };
-const UpdateStatusAndBranch: SideEffects = { status: true, branch: true };
-const UpdateAll: SideEffects = { status: true, branch: true, changes: true };
-const UpdateChanges: SideEffects = { changes: true };
-
-export const enum CommitScope {
-    /** try STAGING_GROUP, but if none, try WORKING_GROUP */
-    UNKNOWN,
-    /** don't use file from any group, useful for merge commit */
-    ALL,
-    STAGING_GROUP,
-    WORKING_GROUP,
-}
+const UpdateAll: SideEffects = { status: true };
 
 export interface CommitOptions {
-    readonly scope: CommitScope;
     readonly useBranch?: boolean;
+    readonly closeBranch?: boolean;
 }
 
 export class Repository implements IDisposable, InteractionAPI {
@@ -250,7 +210,6 @@ export class Repository implements IDisposable, InteractionAPI {
     /**
      * repository was:
      * - disposed
-     * - files were (un)staged
      */
     private _onDidChangeResources = new EventEmitter<void>();
     private readonly onDidChangeResources: Event<void> =
@@ -269,13 +228,12 @@ export class Repository implements IDisposable, InteractionAPI {
     private _sourceControl: SourceControl;
     private autoSyncTimer: ReturnType<typeof setTimeout> | undefined;
 
-    private _currentBranch: FossilBranch | undefined;
+    private _currentBranch: ZitBranch | undefined;
     private _operations = new Map<symbol, SideEffects>();
     private _state = RepositoryState.Idle;
     private readonly disposables: Disposable[] = [];
     private readonly statusBar: StatusBarCommands;
-    // ToDo: rename and possibly make non optional
-    private _fossilStatus: FossilStatus | undefined;
+    private _zitStatus: ZitStatus | undefined;
     private _groups: IStatusGroups;
 
     get sourceControl(): Readonly<SourceControl> {
@@ -293,25 +251,22 @@ export class Repository implements IDisposable, InteractionAPI {
         );
     }
 
-    get conflictGroup(): FossilResourceGroup {
-        return this._groups.conflict;
+    get addedGroup(): ZitResourceGroup {
+        return this._groups.added;
     }
-    get stagingGroup(): FossilResourceGroup {
-        return this._groups.staging;
-    }
-    get workingGroup(): FossilResourceGroup {
+    get workingGroup(): ZitResourceGroup {
         return this._groups.working;
     }
-    get untrackedGroup(): FossilResourceGroup {
+    get untrackedGroup(): ZitResourceGroup {
         return this._groups.untracked;
     }
 
-    get currentBranch(): FossilBranch | undefined {
+    get currentBranch(): ZitBranch | undefined {
         return this._currentBranch;
     }
 
-    get fossilStatus(): FossilStatus | undefined {
-        return this._fossilStatus;
+    get zitStatus(): ZitStatus | undefined {
+        return this._zitStatus;
     }
 
     get operations(): ReadonlyMap<symbol, SideEffects> {
@@ -330,18 +285,18 @@ export class Repository implements IDisposable, InteractionAPI {
         this._onDidChangeState.fire(state);
 
         this._currentBranch = undefined;
-        this._groups.conflict.updateResources([]);
-        this._groups.staging.updateResources([]);
-        this._groups.untracked.updateResources([]);
+        this._groups.added.updateResources([]);
         this._groups.working.updateResources([]);
+        this._groups.untracked.updateResources([]);
         this._onDidChangeResources.fire();
     }
 
-    get root(): FossilRoot {
+    get root(): ZitRoot {
         return this.repository.root;
     }
 
     public queue: ThrottlingQueue = new ThrottlingQueue();
+    readonly initialization: Promise<void>;
 
     constructor(private readonly repository: OpenedRepository) {
         const repoRootWatcher = workspace.createFileSystemWatcher(
@@ -357,7 +312,7 @@ export class Repository implements IDisposable, InteractionAPI {
         onRepositoryChange(this.onFSChange, this, this.disposables);
 
         const onCheckoutDatabaseChange = filterEvent(onRepositoryChange, uri =>
-            /\/\.fslckout$/.test(uri.path)
+            /\/\.zit$/.test(uri.path)
         );
         onCheckoutDatabaseChange(
             this._onDidChangeRepository.fire,
@@ -366,14 +321,14 @@ export class Repository implements IDisposable, InteractionAPI {
         );
 
         this._sourceControl = scm.createSourceControl(
-            'fossil',
-            'Fossil',
+            'zit',
+            'Zit',
             Uri.file(repository.root)
         );
         this.disposables.push(this._sourceControl);
 
         this._sourceControl.acceptInputCommand = {
-            command: 'fossil.commitWithInput',
+            command: 'zit.commitWithInput',
             title: localize('commit', 'Commit'),
             arguments: [this satisfies Repository],
         };
@@ -384,7 +339,7 @@ export class Repository implements IDisposable, InteractionAPI {
         this._groups = groups;
         this.disposables.push(
             ...Object.values(groups).map(
-                (group: FossilResourceGroup) => group.disposable
+                (group: ZitResourceGroup) => group.disposable
             )
         );
 
@@ -394,7 +349,7 @@ export class Repository implements IDisposable, InteractionAPI {
             this.statusBar,
             this.disposables
         );
-        this.updateModelState(
+        this.initialization = this.updateModelState(
             UpdateAll,
             'opening repository' as Reason
         ).finally(() =>
@@ -406,7 +361,7 @@ export class Repository implements IDisposable, InteractionAPI {
         if (uri.scheme !== 'file') {
             return;
         }
-        return toFossilUri(uri);
+        return toZitUri(uri);
     }
 
     @throttle
@@ -438,24 +393,13 @@ export class Repository implements IDisposable, InteractionAPI {
         await delay(5000);
     }
 
-    private updateInputBoxPlaceholder(): void {
-        const branch = this.currentBranch;
-        let placeholder: string;
-        if (branch) {
-            // '{0}' will be replaced by the corresponding key-command later in the process, which is why it needs to stay.
-            placeholder = localize(
-                'Message ({0} to commit on "{1}")',
-                'Message ({0} to commit on "{1}")',
-                '{0}',
-                branch
-            );
-        } else {
-            placeholder = localize(
-                'Message ({0} to commit)',
-                'Message ({0} to commit)'
-            );
-        }
-        this._sourceControl.inputBox.placeholder = placeholder;
+    private updateInputBoxPlaceholder(branch: ZitBranch): void {
+        this._sourceControl.inputBox.placeholder = localize(
+            'Message ({0} to commit on "{1}")',
+            'Message ({0} to commit on "{1}")',
+            '{0}',
+            branch
+        );
     }
 
     /**
@@ -483,7 +427,7 @@ export class Repository implements IDisposable, InteractionAPI {
 
     @throttle
     async add(...uris: Uri[]): Promise<void> {
-        let resources: FossilResource[];
+        let resources: ZitResource[];
         if (uris.length === 0) {
             resources = this._groups.untracked.resourceStates;
         } else {
@@ -496,28 +440,28 @@ export class Repository implements IDisposable, InteractionAPI {
             this.repository.add(relativePaths)
         );
     }
-    async ls(...uris: Uri[]): Promise<Uri[]> {
-        const lsResult = await this.repository.ls(
-            uris.map(url => url.fsPath as DocumentFsPath)
-        );
+    async ls(): Promise<Uri[]> {
+        const lsResult = await this.repository.ls();
         const rootUri = Uri.file(this.root);
-        return lsResult.map(path => Uri.joinPath(rootUri, path));
+        return lsResult.map(relativePath =>
+            Uri.joinPath(rootUri, relativePath)
+        );
     }
 
     @throttle
     async forget(...uris: Uri[]): Promise<void> {
-        let resources: FossilResource[];
-        if (uris.length === 0) {
-            resources = this._groups.untracked.resourceStates;
-        } else {
-            resources = this.mapResources(uris);
+        const resources =
+            uris.length === 0
+                ? this._groups.added.resourceStates
+                : this.mapResources(uris);
+        const relativePaths = resources.map(resource =>
+            this.mapResourceToRepoRelativePath(resource)
+        );
+        if (relativePaths.length) {
+            await this.runWithProgress(UpdateStatus, () =>
+                this.repository.forget(relativePaths)
+            );
         }
-        const relativePaths = resources.map(r =>
-            this.mapResourceToRepoRelativePath(r)
-        );
-        await this.runWithProgress(UpdateStatus, () =>
-            this.repository.forget(relativePaths)
-        );
     }
 
     async rename(
@@ -529,26 +473,10 @@ export class Repository implements IDisposable, InteractionAPI {
         );
     }
 
-    @throttle
-    async ignore(...uris: Uri[]): Promise<void> {
-        let resources: FossilResource[];
-        if (uris.length === 0) {
-            resources = this._groups.untracked.resourceStates;
-        } else {
-            resources = this.mapResources(uris);
-        }
-        const relativePaths = resources.map(r =>
-            this.mapResourceToRepoRelativePath(r)
-        );
-        await this.runWithProgress(UpdateStatus, () =>
-            this.repository.ignore(relativePaths)
-        );
-    }
-
-    mapResources(resourceUris: Uri[]): FossilResource[] {
-        const resources: FossilResource[] = [];
-        const { conflict, working, untracked, staging } = this._groups;
-        const groups = [working, staging, untracked, conflict];
+    mapResources(resourceUris: Uri[]): ZitResource[] {
+        const resources: ZitResource[] = [];
+        const { added, working, untracked } = this._groups;
+        const groups = [added, working, untracked];
         for (const uri of resourceUris) {
             for (const group of groups) {
                 const resource = group.getResource(uri);
@@ -561,58 +489,8 @@ export class Repository implements IDisposable, InteractionAPI {
         return resources;
     }
 
-    @throttle
-    async stage(...resourceUris: Uri[]): Promise<void> {
-        await this.runWithProgress(
-            {} /* basic staging does't affect status */,
-            async () => {
-                let resources = this.mapResources(resourceUris);
-
-                if (resources.length === 0) {
-                    resources = this._groups.working.resourceStates;
-                }
-
-                const missingResources = resources.filter(
-                    r => r.status === ResourceStatus.MISSING
-                );
-
-                if (missingResources.length) {
-                    const relativePaths = missingResources.map(r =>
-                        this.mapResourceToRepoRelativePath(r)
-                    );
-                    await this.runWithProgress(UpdateStatus, () =>
-                        this.repository.forget(relativePaths)
-                    );
-                }
-
-                const extraResources = resources.filter(
-                    r => r.status === ResourceStatus.EXTRA
-                );
-
-                if (extraResources.length) {
-                    const relativePaths = extraResources.map(r =>
-                        this.mapResourceToRepoRelativePath(r)
-                    );
-                    await this.runWithProgress(UpdateStatus, () =>
-                        this.repository.add(relativePaths)
-                    );
-                    // after 'repository.add' resource statuses change, so:
-                    resources = this.mapResources(
-                        resources.map(r => r.resourceUri)
-                    );
-                }
-
-                this._groups.staging.intersect(resources);
-                this._groups.working.except(resources);
-                this._onDidChangeResources.fire();
-            }
-        );
-    }
-
     // resource --> repo-relative path
-    private mapResourceToRepoRelativePath(
-        resource: FossilResource
-    ): RelativePath {
+    private mapResourceToRepoRelativePath(resource: ZitResource): RelativePath {
         const relativePath = this.mapFileUriToRepoRelativePath(
             resource.resourceUri
         );
@@ -629,7 +507,7 @@ export class Repository implements IDisposable, InteractionAPI {
 
     // resource --> workspace-relative path
     public mapResourceToWorkspaceRelativePath(
-        resource: FossilResource
+        resource: ZitResource
     ): RelativePath {
         const relativePath = this.mapFileUriToWorkspaceRelativePath(
             resource.resourceUri
@@ -646,243 +524,216 @@ export class Repository implements IDisposable, InteractionAPI {
     }
 
     @throttle
-    async unstage(...uris: Uri[]): Promise<void> {
-        let resources = this.mapResources(uris);
-        if (resources.length === 0) {
-            resources = this._groups.staging.resourceStates;
-        }
-        // const relativePaths: string[] = resources.map(r => this.mapResourceToRepoRelativePath(r));
-        // await this.run(Operation.Remove, () => this.repository.revert(relativePaths));
-
-        this._groups.staging.except(resources);
-        this._groups.working.intersect(resources);
-        this._onDidChangeResources.fire();
-    }
-
-    private scopeToFileList(
-        scope: Exclude<CommitScope, CommitScope.UNKNOWN>
-    ): RelativePath[] {
-        if (scope === CommitScope.STAGING_GROUP) {
-            return this.stagingGroup.resourceStates.map(r =>
-                this.mapResourceToRepoRelativePath(r)
-            );
-        }
-        if (scope === CommitScope.WORKING_GROUP) {
-            return this.workingGroup.resourceStates.map(r =>
-                this.mapResourceToRepoRelativePath(r)
-            );
-        }
-        return []; // scope === CommitScope.ALL
-    }
-
-    @throttle
     async commit(
-        message: FossilCommitMessage,
-        scope: Exclude<CommitScope, CommitScope.UNKNOWN>,
-        newBranch: NewBranchOptions | undefined
+        message: ZitCommitMessage,
+        newBranch: NewBranchOptions | undefined,
+        closeBranch: boolean = false
     ): Promise<ExecResult> {
-        return this.runWithProgress(UpdateStatusAndBranch, async () => {
-            const user = typedConfig.username;
-            const fileList = this.scopeToFileList(scope);
-            return this.repository.commit(message, fileList, user, newBranch);
-        });
+        return this.runWithProgress(UpdateStatus, () =>
+            this.repository.commit(
+                message,
+                typedConfig.username,
+                newBranch,
+                closeBranch
+            )
+        );
     }
 
     @throttle
     async revert(...uris: Uri[]): Promise<void> {
         const resources = this.mapResources(uris);
         await this.runWithProgress(UpdateStatus, async () => {
-            const toRevert: RelativePath[] = [];
-
-            for (const r of resources) {
-                if (r.status != ResourceStatus.EXTRA) {
-                    toRevert.push(this.mapResourceToRepoRelativePath(r));
+            const added: RelativePath[] = [];
+            const working: RelativePath[] = [];
+            for (const resource of resources) {
+                if (resource.status === ResourceStatus.EXTRA) {
+                    continue;
+                }
+                const relativePath =
+                    this.mapResourceToRepoRelativePath(resource);
+                if (resource.status === ResourceStatus.ADDED) {
+                    added.push(relativePath);
+                } else {
+                    working.push(relativePath);
                 }
             }
-            await this.repository.revert(toRevert);
+            if (added.length) {
+                await this.repository.forget(added);
+            }
+            if (working.length) {
+                await this.repository.revert(working);
+            }
         });
     }
 
     @throttle
-    async cleanAll(): Promise<void> {
-        await this.runWithProgress(UpdateStatus, async () =>
-            this.repository.cleanAll()
+    async clean(dryRun: boolean): Promise<ExecResult> {
+        return this.runWithProgress(dryRun ? {} : UpdateStatus, () =>
+            this.repository.clean(dryRun)
         );
     }
 
-    @throttle
-    async clean(paths: DocumentFsPath[]): Promise<void> {
-        await this.runWithProgress(UpdateStatus, async () =>
-            this.repository.clean(paths)
-        );
-    }
-
-    async newBranch(newBranch: NewBranchOptions): Promise<ExecResult> {
-        // Creating a new branch doesn't change anything.
-        return this.runWithProgress({}, () =>
-            this.repository.newBranch(newBranch)
-        );
-    }
-
-    async update(checkin?: FossilCheckin): Promise<void> {
-        // Update command can change everything
-        const updateResult = await this.runWithProgress(
-            { syncText: 'Updating...', ...UpdateStatusAndBranch },
+    async update(checkin: ZitCheckin): Promise<ExecResult> {
+        return this.runWithProgress(
+            { syncText: 'Updating...', ...UpdateAll },
             () => this.repository.update(checkin)
         );
-        this.statusBar.onChangesReady(updateResult);
     }
-
-    async close(): Promise<boolean> {
-        const msg = await this.runWithProgress(UpdateChanges, () =>
-            this.repository.close()
-        );
-        if (msg) {
-            interaction.warnUnsavedChanges(msg);
-            return false;
-        }
-        return true;
-    }
-
-    async undoOrRedo<T extends boolean>(
-        command: 'undo' | 'redo',
-        dryRun: T
-    ): Promise<T extends true ? FossilUndoCommand | 'NoUndo' : undefined>;
 
     @throttle
-    async undoOrRedo(
-        command: 'undo' | 'redo',
-        dryRun: boolean
-    ): Promise<FossilUndoCommand | undefined | 'NoUndo'> {
-        const sideEffect = dryRun ? {} : UpdateAll;
-        const undo = await this.runWithProgress(sideEffect, () =>
-            this.repository.undoOrRedo(command, dryRun)
+    async undoOrRedo(command: 'undo' | 'redo'): Promise<undefined | 'NoUndo'> {
+        return this.runWithProgress(UpdateAll, () =>
+            this.repository.undoOrRedo(command)
         );
-
-        return undo;
     }
 
     private _isInAnyGroup(
-        check: (group: FossilResourceGroup) => boolean
+        check: (group: ZitResourceGroup) => boolean
     ): boolean {
-        return [this.workingGroup, this.stagingGroup, this.conflictGroup].some(
-            check
-        );
+        return [this.addedGroup, this.workingGroup].some(check);
     }
 
     public isInAnyGroup(uri: Uri): boolean {
-        return this._isInAnyGroup((group: FossilResourceGroup) =>
+        return this._isInAnyGroup((group: ZitResourceGroup) =>
             group.includesUri(uri)
         );
     }
 
     public isDirInAnyGroup(uri: Uri): boolean {
         const dir = uri.toString() + path.sep;
-        return this._isInAnyGroup((group: FossilResourceGroup) =>
+        return this._isInAnyGroup((group: ZitResourceGroup) =>
             group.includesDir(dir)
         );
     }
-
-    async pull(name: FossilRemoteName): Promise<void> {
-        return this.runWithProgress(UpdateChanges, async () => {
-            await this.queue.enqueue(() => this.repository.pull(name), 'p');
-        });
+    async pull(url?: ZitURI): Promise<void> {
+        return this.runWithProgress(
+            {},
+            async signal => {
+                await this.queue.enqueue(
+                    () => this.repository.pull(url, { signal }),
+                    'p'
+                );
+            },
+            () => true,
+            'Pulling from Zit remote…'
+        );
     }
 
-    async push(name?: FossilRemoteName): Promise<void> {
-        return this.runWithProgress(UpdateChanges, async () => {
-            await this.queue.enqueue(() => this.repository.push(name), 'P');
-        });
+    async push(url?: ZitURI, credentials?: SyncCredentials): Promise<void> {
+        return this.runWithProgress(
+            {},
+            async signal => {
+                await this.queue.enqueue(
+                    () => this.repository.push(url, credentials, { signal }),
+                    'P'
+                );
+            },
+            () => true,
+            'Pushing to Zit remote…'
+        );
     }
 
     @throttle
-    merge(
-        checkin: FossilCheckin,
+    async merge(
+        checkin: ZitCheckin,
         mergeAction: MergeAction
     ): Promise<ExecResult> {
-        return this.runWithProgress(UpdateStatus, async () => {
-            return this.repository.merge(checkin, mergeAction);
-        });
+        const result = await this.runWithProgress(
+            UpdateStatus,
+            signal => this.repository.merge(checkin, mergeAction, { signal }),
+            () => true,
+            'Merging Zit check-in…'
+        );
+        const conflicts = this.repository.parseMergeConflictPaths(
+            result.stderr
+        );
+        if (conflicts.length) {
+            await interaction.warnMergeConflicts(conflicts);
+            for (const conflict of conflicts) {
+                const document = await workspace.openTextDocument(
+                    this.toUri(conflict)
+                );
+                await window.showTextDocument(document, { preview: false });
+            }
+        }
+        return result;
     }
-
-    addTag(branch: FossilBranch, tag: FossilTag): Promise<void> {
-        return this.repository.addTag(branch, tag);
-    }
-
-    cancelTag(branch: FossilBranch, tag: FossilTag): Promise<void> {
-        return this.repository.cancelTag(branch, tag);
+    addTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        return this.repository.addTag(checkin, tag);
     }
 
     async updateCommitMessage(
-        checkin: FossilCheckin,
-        commitMessage: FossilCommitMessage
+        checkin: ZitCheckin,
+        commitMessage: ZitCommitMessage
     ): Promise<void> {
         return this.repository.updateCommitMessage(checkin, commitMessage);
     }
 
-    async praise(path: DocumentFsPath): Promise<Praise[]> {
-        return this.repository.praise(path);
+    async annotate(path: DocumentFsPath): Promise<Annotation[]> {
+        return this.repository.annotate(path);
     }
 
-    // used for "praise" tooltips
-    async info(checkin: FossilCheckin): Promise<{ [key: string]: string }> {
-        return this.repository.info(checkin);
+    // Used for annotation tooltips.
+    async info(checkin: ZitCheckin): Promise<{ [key: string]: string }> {
+        return this.repository.info(this.resolveHistoryCheckin(checkin));
     }
 
-    async config<T extends ConfigKey>(...keys: T[]): Promise<Map<T, string>> {
-        return this.repository.config(keys);
+    async gitExport(destination: UserPath, signal: AbortSignal): Promise<void> {
+        return this.repository.gitExport(destination, { signal });
     }
 
-    async gitExport(): Promise<void> {
-        return this.repository.gitExport();
+    private resolveHistoryCheckin(checkin: ZitCheckin): ZitCheckin {
+        if (checkin !== 'current') {
+            return checkin;
+        }
+        const current = this._zitStatus?.checkin;
+        if (!current) {
+            throw new Error('Zit checkout has no current check-in');
+        }
+        return current;
     }
 
-    async cat(params: FossilUriParams): Promise<Buffer | undefined> {
-        await this.whenIdleAndFocused();
+    async cat(params: ZitUriParams): Promise<Buffer | undefined> {
+        if (params.empty) {
+            return Buffer.alloc(0);
+        }
+        const checkin = params.checkin;
+        if (!checkin) {
+            return undefined;
+        }
 
         return this.runWithProgress({}, async () => {
             const relativePath = path
                 .relative(this.repository.root, params.path)
                 .replace(/\\/g, '/') as RelativePath;
-            return this.repository.cat(relativePath, params.checkin);
+            return this.repository.cat(
+                relativePath,
+                this.resolveHistoryCheckin(checkin)
+            );
         });
     }
 
-    async patchCreate(path: UserPath): Promise<void> {
+    async stash(message: ZitCommitMessage): Promise<void> {
         return this.runWithProgress(UpdateStatus, async () =>
-            this.repository.patchCreate(path)
-        );
-    }
-
-    async patchApply(path: UserPath): Promise<void> {
-        return this.runWithProgress(UpdateStatus, async () =>
-            this.repository.patchApply(path)
-        );
-    }
-
-    async stash(
-        message: FossilCommitMessage,
-        scope: Exclude<CommitScope, CommitScope.UNKNOWN>,
-        operation: 'save' | 'snapshot'
-    ): Promise<void> {
-        return this.runWithProgress(UpdateStatus, async () =>
-            this.repository.stash(
-                message,
-                operation,
-                this.scopeToFileList(scope)
-            )
+            this.repository.stash(message)
         );
     }
 
     async stashList(): Promise<StashItem[]> {
-        return this.runWithProgress(UpdateStatus, async () =>
+        return this.runWithProgress({}, async () =>
             this.repository.stashList()
         );
     }
 
-    async stashPop(): Promise<void> {
+    async stashShow(stashId?: StashID): Promise<string> {
+        return this.runWithProgress({}, async () =>
+            this.repository.stashShow(stashId)
+        );
+    }
+
+    async stashPop(stashId?: StashID): Promise<void> {
         return this.runWithProgress(UpdateStatus, async () =>
-            this.repository.stashPop()
+            this.repository.stashPop(stashId)
         );
     }
 
@@ -890,104 +741,161 @@ export class Repository implements IDisposable, InteractionAPI {
         operation: 'apply' | 'drop',
         stashId: StashID
     ): Promise<void> {
-        return this.runWithProgress(UpdateStatus, async () =>
-            this.repository.stashApplyOrDrop(operation, stashId)
+        return this.runWithProgress(
+            operation === 'apply' ? UpdateStatus : {},
+            async () => this.repository.stashApplyOrDrop(operation, stashId)
         );
     }
-
     private async runWithProgress<T>(
         sideEffects: SideEffects,
-        runOperation: () => Promise<T>,
-        runSideEffects: (arg0: T) => boolean = () => true
+        runOperation: (signal?: AbortSignal) => Promise<T>,
+        runSideEffects: (arg0: T) => boolean = () => true,
+        cancellableTitle?: string
     ): Promise<T> {
         if (this.state !== RepositoryState.Idle) {
             throw new Error('Repository not initialized');
         }
 
-        return window.withProgress(
-            { location: ProgressLocation.SourceControl },
-            async () => {
-                const key = Symbol();
-                this._operations.set(key, sideEffects);
-                this._onRunOperation.fire();
+        const run = async (signal?: AbortSignal): Promise<T> => {
+            const key = Symbol();
+            this._operations.set(key, sideEffects);
+            this._onRunOperation.fire();
 
+            try {
+                const operationResult = await runOperation(signal);
+                if (runSideEffects(operationResult)) {
+                    await this.updateModelState(
+                        sideEffects,
+                        'Triggered by previous operation' as Reason
+                    );
+                }
+                return operationResult;
+            } finally {
+                this._operations.delete(key);
+                this._onDidRunOperation.fire();
+            }
+        };
+
+        if (!cancellableTitle) {
+            return window.withProgress(
+                { location: ProgressLocation.SourceControl },
+                () => run()
+            );
+        }
+
+        return window.withProgress(
+            {
+                title: cancellableTitle,
+                location: ProgressLocation.Notification,
+                cancellable: true,
+            },
+            async (_progress, token) => {
+                const controller = new AbortController();
+                const cancellation = token.onCancellationRequested(() =>
+                    controller.abort()
+                );
+                if (token.isCancellationRequested) {
+                    controller.abort();
+                }
                 try {
-                    const operationResult = await runOperation();
-                    if (runSideEffects(operationResult)) {
-                        await this.updateModelState(
-                            sideEffects,
-                            'Triggered by previous operation' as Reason
-                        );
+                    const result = await run(controller.signal);
+                    if (controller.signal.aborted) {
+                        throw new CancellationError();
                     }
-                    return operationResult;
+                    return result;
+                } catch (error) {
+                    if (controller.signal.aborted) {
+                        throw new CancellationError();
+                    }
+                    throw error;
                 } finally {
-                    this._operations.delete(key);
-                    this._onDidRunOperation.fire();
+                    cancellation.dispose();
                 }
             }
         );
     }
 
     @throttle
-    public async getRemotes(): Promise<FossilRemote[]> {
-        return this.repository.getRemotes();
+    public async getRemote(): Promise<ZitURI | undefined> {
+        return this.repository.getRemote();
+    }
+
+    public setRemote(url?: ZitURI): Promise<void> {
+        return this.repository.setRemote(url);
     }
 
     @throttle
-    public async getBranchesAndTags(): Promise<[BranchDetails[], FossilTag[]]> {
+    public async getBranchesAndTags(): Promise<[BranchDetails[], ZitTag[]]> {
         const [branches, tags] = await Promise.all([
             this.repository.getBranches(),
             this.repository.getTags(),
         ]);
-        const branchesSet = new Set<FossilCheckin>(
+        const branchesSet = new Set<ZitCheckin>(
             branches.map(info => info.name)
         );
         // Exclude tags that are branches
         return [branches, tags.filter(tag => !branchesSet.has(tag))];
     }
 
-    /** When user selects one of the modified files using 'fossil.log' command */
+    /** Show one committed file change against the check-in's primary parent. */
     async diffToParent(
         filePath: RelativePath,
-        checkin: FossilCheckin
+        checkin: ZitCheckin,
+        status?: ResourceStatus
     ): Promise<void> {
+        const resolvedCheckin = this.resolveHistoryCheckin(checkin);
         const uri = this.toUri(filePath);
-        const parent: FossilCheckin = await this.getInfo(checkin, 'parent');
-        const left = toFossilUri(uri, parent);
-        const right = toFossilUri(uri, checkin);
-        const baseName = path.basename(uri.fsPath);
-        const title = `${baseName} (${parent.slice(0, 12)} vs. ${checkin.slice(
-            0,
-            12
-        )})`;
+        const parent = await this.getInfo(resolvedCheckin, 'parent');
+        const left =
+            parent && status !== ResourceStatus.ADDED
+                ? toZitUri(uri, parent)
+                : toZitEmptyUri(uri);
+        const right =
+            status === ResourceStatus.DELETED
+                ? toZitEmptyUri(uri)
+                : toZitUri(uri, resolvedCheckin);
+        const leftLabel = parent?.slice(0, 12) ?? 'empty';
+        const rightLabel =
+            status === ResourceStatus.DELETED
+                ? 'empty'
+                : resolvedCheckin.slice(0, 12);
+        const title = `${path.basename(
+            uri.fsPath
+        )} (${leftLabel} vs. ${rightLabel})`;
 
-        if (left && right) {
-            return commands.executeCommand<void>(
-                'vscode.diff',
-                left,
-                right,
-                title,
-                { preview: false } as TextDocumentShowOptions
-            );
-        }
+        return commands.executeCommand<void>(
+            'vscode.diff',
+            left,
+            right,
+            title,
+            { preview: false } as TextDocumentShowOptions
+        );
     }
 
-    public async getInfo(
-        checkin: FossilCheckin,
+    public getInfo(
+        checkin: ZitCheckin,
+        field: 'parent'
+    ): Promise<ZitHash | undefined>;
+    public getInfo(checkin: ZitCheckin, field: 'hash'): Promise<ZitHash>;
+    public getInfo(
+        checkin: ZitCheckin,
         field: 'parent' | 'hash'
-    ): Promise<FossilHash> {
-        return this.repository.getInfo(checkin, field);
+    ): Promise<ZitHash | undefined> {
+        const resolvedCheckin = this.resolveHistoryCheckin(checkin);
+        return field === 'hash'
+            ? this.repository.getInfo(resolvedCheckin, 'hash')
+            : this.repository.getInfo(resolvedCheckin, 'parent');
     }
 
     @throttle
-    public getBranches(opts: { closed?: true } = {}): Promise<BranchDetails[]> {
+    public getBranches(
+        opts: { includeClosed?: boolean } = {}
+    ): Promise<BranchDetails[]> {
         return this.repository.getBranches(opts);
     }
 
     @throttle
-    public async getCommitDetails(
-        checkin: FossilCheckin
-    ): Promise<CommitDetails> {
+    public async getCommitDetails(checkin: ZitCheckin): Promise<CommitDetails> {
         const commits = await this.getLogEntries({
             checkin: checkin,
             limit: 1,
@@ -1009,104 +917,84 @@ export class Repository implements IDisposable, InteractionAPI {
             filePath = this.mapFileUriToRepoRelativePath(options.fileUri);
         }
 
+        const requestedCheckin =
+            options.checkin ??
+            (filePath ? ('current' as ZitCheckin) : undefined);
         const opts: TimelineOptions = {
             ...options,
-            filePath: filePath,
+            checkin:
+                requestedCheckin === undefined
+                    ? undefined
+                    : this.resolveHistoryCheckin(requestedCheckin),
+            filePath,
             limit: options.limit || 512,
         } as const;
         return this.repository.getLogEntries(opts);
     }
 
-    /**
-     * `UpdateModelState` is called after every non read only operation run
-     *
-     * what we do here:
-     *   - execute `fossil status --differ --merge` to get status
-     *   - execute `fossil branch current`to get current branch
-     *   - parse status output to update SCM tree
-     *   - get `changes`
-     */
+    /** Refresh the Zit checkout model after a mutating operation. */
     @throttle
     public async updateModelState(
         sideEffects: SideEffects,
         reason: Reason = 'model state is updating' as Reason
     ): Promise<void> {
-        // initially, this method executed all commands in parallel
-        // but that causes not so rare 'Database locked' errors, so
-        // we run commands sequentially
-        if (sideEffects.status) {
-            // updateStatus queued
-            await this.updateStatus(reason).then(err => {
-                if (err) {
-                    if (err.fossilErrorCode === 'NotAFossilRepository') {
-                        this.state = RepositoryState.Disposed;
-                    } else {
-                        throw new Error(
-                            `Unexpected fossil result: ${String(err)}`
-                        );
-                    }
-                }
-            });
+        if (!sideEffects.status) {
+            return;
         }
-        if (sideEffects.changes) {
-            // updateChanges queued
-            await this.updateChanges(reason);
-        }
-        if (sideEffects.branch) {
-            // updateBranch queued
-            await this.updateBranch();
+        const failure = await this.updateStatus(reason);
+        if (failure) {
+            throw new Error(
+                failure.stderr.trim() ||
+                    failure.spawnFailure?.message ||
+                    'zit status failed'
+            );
         }
     }
 
-    /**
-     * Why queue:
-     * `fossil update` can execute `UPDATE` sql statement, for example
-     * "UPDATE vfile SET mtime=%lld, chnged=%d WHERE id=%d"
-     * which requires database locking, and running multiple fossil statuses
-     * at the same time will lead to "database is locked" sqlite error.
-     */
     @queue('queue', 'u')
     public async updateStatus(
         reason?: Reason
     ): Promise<ExecFailure | undefined> {
-        const result = await this.repository.getStatus(reason);
-        if (result.exitCode) {
-            return result;
+        const { status, extras, diff } = await this.repository.getStatus(
+            reason ?? ('updating status' as Reason)
+        );
+        const failure = [status, extras, diff].find(
+            (result): result is ExecFailure => result.exitCode !== 0
+        );
+        if (failure) {
+            return failure;
         }
 
-        const fossilStatus = (this._fossilStatus =
-            this.repository.parseStatusString(result.stdout as StatusString));
-
+        const zitStatus = (this._zitStatus = this.repository.parseStatusString(
+            status.stdout as StatusString,
+            extras.stdout,
+            diff.stdout
+        ));
+        this._currentBranch = zitStatus.branch;
         groupStatuses({
             repositoryRoot: this.repository.root,
-            fileStatuses: fossilStatus.statuses,
+            fileStatuses: zitStatus.statuses,
             statusGroups: this._groups,
         });
         this._sourceControl.count = this.count;
+        this.updateInputBoxPlaceholder(zitStatus.branch);
+        this.statusBar.update();
         return;
-    }
-
-    @queue('queue', 'b')
-    private async updateBranch() {
-        const currentBranch = await this.repository.getCurrentBranch();
-        if (this._currentBranch !== currentBranch) {
-            this._currentBranch = currentBranch;
-        }
-        this.updateInputBoxPlaceholder();
     }
 
     private get count(): number {
         return (
-            this.stagingGroup.resourceStates.length +
+            this.addedGroup.resourceStates.length +
             this.workingGroup.resourceStates.length +
-            this.conflictGroup.resourceStates.length +
             this.untrackedGroup.resourceStates.length
         );
     }
 
-    public updateAutoSyncInterval(interval: AutoSyncIntervalMs): void {
+    public async updateAutoSyncInterval(
+        interval: AutoSyncIntervalMs,
+        persistNativeSetting: boolean = false
+    ): Promise<void> {
         clearTimeout(this.autoSyncTimer);
-        // ensure interval is ether 0 or minimum 15 seconds
         interval =
             interval && (Math.max(interval, 15000) as AutoSyncIntervalMs);
         const nextSyncTime = interval
@@ -1115,55 +1003,59 @@ export class Repository implements IDisposable, InteractionAPI {
         this.statusBar.onSyncTimeUpdated(nextSyncTime);
         if (interval) {
             this.autoSyncTimer = setTimeout(
-                () => this.periodicSync(),
+                () => void this.periodicSync(),
                 interval
             );
         }
-    }
-
-    /**
-     * Reads `changes` from `fossil update --dry-run --latest`
-     * and updates the status bar
-     */
-    @queue('queue', 'c')
-    private async updateChanges(reason: Reason): Promise<void> {
-        const updateResult = await this.repository.update(
-            undefined,
-            true,
-            reason
-        );
-        this.statusBar.onChangesReady(updateResult);
+        if (persistNativeSetting) {
+            await this.repository.setAutoSync(Boolean(interval));
+        }
     }
 
     @queue('queue', 's')
     private async syncSilently(): Promise<ExecResult> {
-        return this.repository.exec(['sync'], 'periodic sync' as Reason, {
+        return this.repository.sync(undefined, undefined, {
             logErrors: false,
         });
     }
 
-    private async syncVerbosely(): Promise<ExecResult> {
+    private async syncVerbosely(
+        credentials?: SyncCredentials
+    ): Promise<ExecResult> {
         return this.runWithProgress(
-            { changes: true, syncText: 'Syncing' },
-            () => this.queue.enqueue(() => this.repository.exec(['sync']), 'S'),
-            res => !res.exitCode
+            { syncText: 'Syncing' },
+            signal =>
+                this.queue.enqueue(
+                    () =>
+                        this.repository.sync(undefined, credentials, {
+                            signal,
+                        }),
+                    'S'
+                ),
+            result => !result.exitCode,
+            'Syncing Zit repository…'
         );
     }
 
     async periodicSync(): Promise<void> {
-        const syncResult = await this.syncSilently();
-        await this.updateChanges('sync happened' as Reason);
-        this.statusBar.onSyncReady(syncResult);
-        this.updateAutoSyncInterval(typedConfig.autoSyncIntervalMs);
+        const remote = await this.getRemote();
+        if (remote) {
+            const syncResult = await this.syncSilently();
+            this.statusBar.onSyncReady(syncResult);
+        } else {
+            this.statusBar.onNoRemote();
+        }
+        await this.updateAutoSyncInterval(typedConfig.autoSyncIntervalMs);
     }
 
-    async sync(): Promise<void> {
-        const syncResult = await this.syncVerbosely();
+    async sync(credentials?: SyncCredentials): Promise<void> {
+        const syncResult = await this.syncVerbosely(credentials);
         this.statusBar.onSyncReady(syncResult);
-        this.updateAutoSyncInterval(typedConfig.autoSyncIntervalMs);
+        await this.updateAutoSyncInterval(typedConfig.autoSyncIntervalMs);
     }
 
     dispose(): void {
+        clearTimeout(this.autoSyncTimer);
         dispose(this.disposables);
     }
 }

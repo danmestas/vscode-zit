@@ -1,5 +1,5 @@
 import * as path from 'path';
-import * as Mocha from 'mocha';
+import Mocha = require('mocha');
 import * as fs from 'fs';
 
 export function run(testsRoot: string): Promise<void> {
@@ -22,7 +22,7 @@ export function run(testsRoot: string): Promise<void> {
 
             try {
                 // Run the mocha test
-                mocha.run(failures => {
+                mocha.run((failures: number) => {
                     /* c8 ignore next 2 */
                     if (failures > 0) {
                         e(new Error(`${failures} tests failed.`));

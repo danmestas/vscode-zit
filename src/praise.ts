@@ -16,8 +16,8 @@ import {
     window,
     workspace,
 } from 'vscode';
-import { FossilHash, Praise } from './openedRepository';
-import { Repository } from './repository';
+import type { Annotation, ZitHash } from './openedRepository';
+import type { Repository } from './repository';
 
 const annotationDecoration = window.createTextEditorDecorationType({
     rangeBehavior: DecorationRangeBehavior.ClosedOpen,
@@ -45,15 +45,15 @@ const annotationHighlight = window.createTextEditorDecorationType({
     },
 });
 
-export class PraiseAnnotator {
-    private static editors = new WeakMap<TextEditor, PraiseAnnotator>();
+export class ZitAnnotator {
+    private static editors = new WeakMap<TextEditor, ZitAnnotator>();
     private readonly disposable: Disposable;
     private readonly document: TextDocument;
     private readonly hoverProvider: Disposable;
     private constructor(
         private readonly repository: Repository,
         private readonly editor: TextEditor,
-        private readonly hashes: FossilHash[]
+        private readonly hashes: ZitHash[]
     ) {
         this.document = editor.document;
         this.disposable = Disposable.from(
@@ -69,15 +69,14 @@ export class PraiseAnnotator {
             { provideHover: this.onHover.bind(this) }
         );
     }
-    static async create(
+    static create(
         repository: Repository,
         editor: TextEditor,
-        praises: Praise[]
-    ): Promise<PraiseAnnotator> {
-        await editor.document.save(); // for `fossil diff` to work
-        let prev_hash: FossilHash | undefined;
+        annotations: Annotation[]
+    ): ZitAnnotator {
+        let previousHash: ZitHash | undefined;
         const nbsp = ' ';
-        const decorations = praises.map((praise, lineNo) => {
+        const decorations = annotations.map((annotation, lineNo) => {
             const range = editor.document.validateRange(
                 new Range(lineNo, 0, lineNo, 0)
             );
@@ -86,18 +85,18 @@ export class PraiseAnnotator {
                 borderStyle: 'solid',
                 borderWidth: '0 2px 0 0',
             };
-            if (prev_hash == praise[0]) {
+            if (previousHash == annotation[0]) {
                 before = {
                     contentText: nbsp,
                     textDecoration: 'none;padding: 0 33ch 0 0',
                     ...common,
                 };
             } else {
-                prev_hash = praise[0];
+                previousHash = annotation[0];
                 // total width: 8(hash) + 1 + 10(date) + 1 + 13 = 33
-                const checkin = praise[0].slice(0, 8) || nbsp.repeat(8);
-                const date = praise[1] || nbsp.repeat(10);
-                const username = praise[2].slice(-13);
+                const checkin = annotation[0].slice(0, 8) || nbsp.repeat(8);
+                const date = annotation[1] || nbsp.repeat(10);
+                const username = annotation[2].slice(-13);
                 const contentText = `${checkin} ${date}${nbsp.repeat(
                     14 - username.length
                 )}${username}`;
@@ -107,22 +106,22 @@ export class PraiseAnnotator {
                     ...common,
                 };
             }
-            if (!praise[0]) {
+            if (!annotation[0]) {
                 before.backgroundColor = 'rgba(53, 255, 28, 0.07)';
             }
             return { renderOptions: { before }, range };
         });
         editor.setDecorations(annotationDecoration, decorations);
-        const hashes = praises.map(praise => praise[0]);
-        const annotator = new PraiseAnnotator(repository, editor, hashes);
-        PraiseAnnotator.editors.set(editor, annotator);
+        const hashes = annotations.map(annotation => annotation[0]);
+        const annotator = new ZitAnnotator(repository, editor, hashes);
+        ZitAnnotator.editors.set(editor, annotator);
         return annotator;
     }
 
     static tryDelete(editor: TextEditor): boolean {
-        const praise = PraiseAnnotator.editors.get(editor);
-        praise?.dispose();
-        return praise !== undefined;
+        const annotator = ZitAnnotator.editors.get(editor);
+        annotator?.dispose();
+        return annotator !== undefined;
     }
 
     private onTextEditorSelectionChanged(
@@ -179,7 +178,7 @@ export class PraiseAnnotator {
     }
 
     dispose(): void {
-        PraiseAnnotator.editors.delete(this.editor);
+        ZitAnnotator.editors.delete(this.editor);
         this.editor.setDecorations(annotationDecoration, []);
         this.editor.setDecorations(annotationHighlight, []);
         this.disposable.dispose();

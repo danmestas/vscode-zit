@@ -2,6 +2,8 @@
 .mocharc.js
 esbuild.config.js
 .nycrc
+.nvmrc
+eslint.config.mjs
 .vscode
 **/.gitignore
 **/*.map
@@ -9,8 +11,11 @@ esbuild.config.js
 **/tsconfig.json
 coverage/
 docs/
-images/
 node_modules
 src/
 pikchr/test/*
 pikchr/*.py
+.sesh/
+banks/
+.tracedecay/
+*.sarif

@@ -1,6 +1,11 @@
-# Debugging TextMate rules
+# Debugging Pikchr TextMate rules
 
-## Test rules
+Pikchr support in this extension is syntax highlighting only; it does not invoke a repository renderer or preview webview.
 
-1) Clone `git@github.com:microsoft/vscode-textmate.git`
-2) Execute `npm run inspect pikchr/pikchr.tmLanguage.json example.pikchr`
+Run the checked-in grammar fixtures with:
+
+```sh
+npm run grammar-test
+```
+
+For interactive TextMate inspection, use the tooling documented by `vscode-textmate` against `pikchr/pikchr.tmLanguage.json` and a local `.pikchr` sample.

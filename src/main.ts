@@ -9,11 +9,11 @@
 import { ExtensionContext, window, Disposable, commands, Uri } from 'vscode';
 import { Model } from './model';
 import { CommandCenter } from './commands';
-import { FossilFileSystemProvider } from './fileSystemProvider';
+import { ZitFileSystemProvider } from './fileSystemProvider';
 import * as nls from 'vscode-nls';
 import typedConfig from './config';
-import { findFossil } from './fossilFinder';
-import { FossilExecutable } from './fossilExecutable';
+import { findZit } from './zitFinder';
+import { ZitExecutable } from './zitExecutable';
 
 export const localize = nls.loadMessageBundle();
 
@@ -23,24 +23,24 @@ async function init(context: ExtensionContext): Promise<Model | undefined> {
         new Disposable(() => Disposable.from(...disposables).dispose())
     );
 
-    const outputChannel = window.createOutputChannel('Fossil', { log: true });
+    const outputChannel = window.createOutputChannel('Zit', { log: true });
     disposables.push(outputChannel);
 
-    const fossilHist = typedConfig.path;
-    const fossilInfo = await findFossil(fossilHist, outputChannel);
-    const executable = new FossilExecutable(outputChannel);
+    const zitPath = typedConfig.path;
+    const zitInfo = await findZit(zitPath, outputChannel);
+    const executable = new ZitExecutable(outputChannel);
 
-    const model = new Model(executable, fossilHist);
+    const model = new Model(executable, zitPath);
     disposables.push(model);
-    model.foundExecutable(fossilInfo);
-    if (!fossilInfo && !typedConfig.ignoreMissingFossilWarning) {
-        const download = localize('downloadFossil', 'Download Fossil');
+    model.foundExecutable(zitInfo);
+    if (!zitInfo && !typedConfig.ignoreMissingZitWarning) {
+        const download = localize('downloadZit', 'Download Zit');
         const neverShowAgain = localize('neverShowAgain', "Don't Show Again");
-        const editPath = localize('editPath', 'Edit "fossil.path"');
+        const editPath = localize('editPath', 'Edit "zit.path"');
         const choice = await window.showWarningMessage(
             localize(
                 'notfound',
-                "Fossil was not found. Install it or configure it using the 'fossil.path' setting."
+                "Zit was not found. Install it or configure it using the 'zit.path' setting."
             ),
             download,
             editPath,
@@ -49,22 +49,24 @@ async function init(context: ExtensionContext): Promise<Model | undefined> {
         if (choice === download) {
             commands.executeCommand(
                 'vscode.open',
-                Uri.parse('https://www.fossil-scm.org/')
+                Uri.parse(
+                    'https://fossil.craftdesign.group/zit/uv/download.html'
+                )
             );
         } else if (choice === editPath) {
             commands.executeCommand(
                 'workbench.action.openSettings',
-                'fossil.path'
+                'zit.path'
             );
         } else if (choice === neverShowAgain) {
-            await typedConfig.disableMissingFossilWarning();
+            await typedConfig.disableMissingZitWarning();
         }
     }
 
     const onRepository = () =>
         commands.executeCommand(
             'setContext',
-            'fossilOpenRepositoryCount',
+            'zitOpenRepositoryCount',
             model.repositories.length
         );
     model.onDidOpenRepository(onRepository, null, disposables);
@@ -72,8 +74,8 @@ async function init(context: ExtensionContext): Promise<Model | undefined> {
     onRepository();
 
     disposables.push(
-        new CommandCenter(executable, model, outputChannel, context),
-        new FossilFileSystemProvider(model)
+        new CommandCenter(executable, model, outputChannel),
+        new ZitFileSystemProvider(model)
     );
     return model;
 }

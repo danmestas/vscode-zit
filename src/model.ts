@@ -19,7 +19,7 @@ import {
     commands,
     ConfigurationChangeEvent,
 } from 'vscode';
-import type { FossilExecutable, Reason } from './fossilExecutable';
+import type { ZitExecutable, Reason } from './zitExecutable';
 import { anyEvent, filterEvent, dispose, eventToPromise } from './util';
 import { memoize, debounce, sequentialize } from './decorators';
 import * as path from 'path';
@@ -31,10 +31,10 @@ import { localize } from './main';
 import * as interaction from './interaction';
 import { OpenedRepository } from './openedRepository';
 import {
-    FossilExecutableInfo,
-    UnvalidatedFossilExecutablePath,
-    findFossil,
-} from './fossilFinder';
+    ZitExecutableInfo,
+    UnvalidatedZitExecutablePath,
+    findZit,
+} from './zitFinder';
 
 class RepositoryPick implements QuickPickItem {
     @memoize get label(): string {
@@ -80,7 +80,7 @@ const enum State {
  *
  * 1) Model should manage list of Repository objects
  *    in vscode's source control panel
- * 2) Model is exposed as fossil Extension API
+ * 2) Model is exposed as the Zit extension API
  */
 export class Model implements Disposable {
     private _onDidOpenRepository = new EventEmitter<Repository>();
@@ -108,7 +108,7 @@ export class Model implements Disposable {
         return this.openRepositories.map(r => r.repository);
     }
 
-    private possibleFossilRepositoryPaths = new Set<string>();
+    private possibleZitRepositoryPaths = new Set<string>();
 
     private _state = State.UNINITIALIZED;
     get state(): State {
@@ -122,17 +122,17 @@ export class Model implements Disposable {
     }
 
     private readonly disposables: Disposable[] = [];
-    // event for when `fossil.found` is set
+    // event for when `zit.found` is set
     private readonly subscriptions: Disposable[] = [];
     private renamingDisposable: Disposable | undefined;
 
     /**
      * @param executable executable that will be initialized later
-     * @param lastUsedHist used when configuration updates
+     * @param lastUsedPath used when configuration updates
      */
     constructor(
-        private readonly executable: FossilExecutable,
-        private lastUsedHist: UnvalidatedFossilExecutablePath | null
+        private readonly executable: ZitExecutable,
+        private lastUsedPath: UnvalidatedZitExecutablePath | null
     ) {
         workspace.onDidChangeConfiguration(
             this.onDidChangeConfiguration,
@@ -161,7 +161,7 @@ export class Model implements Disposable {
     private onDidChangeConfiguration(
         event?: ConfigurationChangeEvent
     ): Promise<void> | void {
-        if (event && !event.affectsConfiguration('fossil')) {
+        if (event && !event.affectsConfiguration('zit')) {
             return;
         }
         this.renamingDisposable?.dispose();
@@ -172,26 +172,29 @@ export class Model implements Disposable {
                 this.disposables
             );
         }
-        const fossilHint = typedConfig.path;
-        if (this.lastUsedHist != fossilHint) {
-            this.lastUsedHist = fossilHint;
-            return findFossil(fossilHint, this.executable.outputChannel).then(
+        const zitHint = typedConfig.path;
+        if (this.lastUsedPath != zitHint) {
+            this.lastUsedPath = zitHint;
+            return findZit(zitHint, this.executable.outputChannel).then(
                 this.foundExecutable.bind(this)
             );
         }
-        if (!event || event.affectsConfiguration('fossil.autoSyncInterval')) {
-            for (const repository of this.repositories) {
-                repository.updateAutoSyncInterval(
-                    typedConfig.autoSyncIntervalMs
-                );
-            }
+        if (!event || event.affectsConfiguration('zit.autoSyncInterval')) {
+            return Promise.all(
+                this.repositories.map(repository =>
+                    repository.updateAutoSyncInterval(
+                        typedConfig.autoSyncIntervalMs,
+                        event !== undefined
+                    )
+                )
+            ).then(() => undefined);
         }
     }
 
     public async foundExecutable(
-        info: FossilExecutableInfo | undefined
+        info: ZitExecutableInfo | undefined
     ): Promise<void> {
-        await commands.executeCommand('setContext', 'fossil.found', !!info);
+        await commands.executeCommand('setContext', 'zit.found', !!info);
         dispose(this.subscriptions);
         if (info) {
             await this.subscribe();
@@ -206,7 +209,8 @@ export class Model implements Disposable {
 
     private async subscribe() {
         const subscribe = <T extends Disposable>(d: T) => (
-            this.subscriptions.push(d), d
+            this.subscriptions.push(d),
+            d
         );
         subscribe(
             workspace.onDidChangeWorkspaceFolders(
@@ -225,7 +229,7 @@ export class Model implements Disposable {
         );
 
         const checkoutWatcher = subscribe(
-            workspace.createFileSystemWatcher('**/.fslckout')
+            workspace.createFileSystemWatcher('**/.zit')
         );
 
         const onWorkspaceChange = anyEvent(
@@ -235,7 +239,7 @@ export class Model implements Disposable {
         );
         subscribe(
             onWorkspaceChange(
-                this.onPossibleFossilRepositoryChange,
+                this.onPossibleZitRepositoryChange,
                 this,
                 this.disposables
             )
@@ -256,14 +260,14 @@ export class Model implements Disposable {
     private disable(): void {
         const openRepositories = [...this.openRepositories];
         dispose(openRepositories);
-        this.possibleFossilRepositoryPaths.clear();
+        this.possibleZitRepositoryPaths.clear();
         dispose(this.disposables);
         dispose(this.subscriptions);
     }
 
     /**
      * Scans the first level of each workspace folder, looking
-     * for fossil repositories.
+     * for Zit repositories.
      */
     private async scanWorkspaceFolders(): Promise<void> {
         for (const folder of workspace.workspaceFolders || []) {
@@ -279,20 +283,18 @@ export class Model implements Disposable {
         }
     }
 
-    private onPossibleFossilRepositoryChange(uri: Uri): void {
-        this.possibleFossilRepositoryPaths.add(
-            uri.fsPath.replace('.fslckout', '')
-        );
-        this.eventuallyScanPossibleFossilRepositories();
+    private onPossibleZitRepositoryChange(uri: Uri): void {
+        this.possibleZitRepositoryPaths.add(path.dirname(uri.fsPath));
+        this.eventuallyScanPossibleZitRepositories();
     }
 
     @debounce(500)
-    private eventuallyScanPossibleFossilRepositories(): void {
-        for (const path of this.possibleFossilRepositoryPaths) {
+    private eventuallyScanPossibleZitRepositories(): void {
+        for (const path of this.possibleZitRepositoryPaths) {
             this.tryOpenRepository(path);
         }
 
-        this.possibleFossilRepositoryPaths.clear();
+        this.possibleZitRepositoryPaths.clear();
     }
 
     // An event that is emitted when a workspace folder is added or removed.
@@ -390,14 +392,20 @@ export class Model implements Disposable {
         // This can happen whenever `path` has the wrong case sensitivity in
         // case insensitive file systems
         // https://github.com/Microsoft/vscode/issues/33498
-        // the above comment is here from git extension and
-        // might not be relevant for fossil
+        // the above comment is here from the Git extension and
+        // might not be relevant for Zit
 
         if (this.getRepository(Uri.file(openedRepository.root))) {
             return true;
         }
 
         const repository = new Repository(openedRepository);
+        try {
+            await repository.initialization;
+        } catch {
+            repository.dispose();
+            return false;
+        }
 
         this.open(repository);
         return true;
@@ -432,16 +440,6 @@ export class Model implements Disposable {
         const openRepository = { repository, dispose };
         this.openRepositories.push(openRepository);
         this._onDidOpenRepository.fire(repository);
-    }
-
-    async close(repository: Repository): Promise<void> {
-        const openRepository = this.getOpenRepository(repository);
-        if (!openRepository) {
-            return;
-        }
-        if (await openRepository.repository.close()) {
-            openRepository.dispose();
-        }
     }
 
     async pickRepository(): Promise<Repository | undefined> {
@@ -485,20 +483,35 @@ export class Model implements Disposable {
         }
 
         if (hint instanceof Uri) {
-            const resourcePath = hint.fsPath;
+            const resourcePath = path.resolve(hint.fsPath);
+            let match: OpenRepository | undefined;
+            let matchRootLength = -1;
 
             for (const liveRepository of this.openRepositories) {
+                const repositoryRoot = path.resolve(
+                    liveRepository.repository.root
+                );
                 const relativePath = path.relative(
-                    liveRepository.repository.root,
+                    repositoryRoot,
                     resourcePath
                 );
+                const containsResource =
+                    relativePath === '' ||
+                    (!path.isAbsolute(relativePath) &&
+                        !path.win32.isAbsolute(relativePath) &&
+                        relativePath !== '..' &&
+                        !relativePath.startsWith(`..${path.sep}`));
 
-                if (!/^\.\./.test(relativePath)) {
-                    return liveRepository;
+                if (
+                    containsResource &&
+                    repositoryRoot.length > matchRootLength
+                ) {
+                    match = liveRepository;
+                    matchRootLength = repositoryRoot.length;
                 }
             }
 
-            return undefined;
+            return match;
         }
 
         for (const liveRepository of this.openRepositories) {
