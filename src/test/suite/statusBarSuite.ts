@@ -1,4 +1,4 @@
-import { commands, window } from 'vscode';
+import { commands, Uri, window } from 'vscode';
 import * as sinon from 'sinon';
 import {
     fakeExecutionResult,
@@ -11,6 +11,7 @@ import {
 import * as assert from 'assert/strict';
 import { Suite, suiteTeardown, suiteSetup } from 'mocha';
 import { Reason } from '../../zitExecutable';
+import { ZitURI } from '../../openedRepository';
 
 interface ConfigurationHandler {
     onDidChangeConfiguration(event: {
@@ -121,6 +122,97 @@ export function StatusBarSuite(this: Suite): void {
         assert.match(
             statusBarCommands()[1].tooltip!,
             /^Next sync \d\d:\d\d:\d\d\nrepository with no remote\nSync$/
+        );
+    });
+
+    test('refreshes status and autosync after configuring a remote', async () => {
+        const repository = getRepository();
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: 'no remote set\n' })
+        );
+        await repository.periodicSync();
+        const before = statusBarCommands()[1].tooltip;
+        assert.match(before!, /repository with no remote/);
+        const remote = Uri.parse('https://example.test/repository') as ZitURI;
+        const setRemote = exec
+            .withArgs(['remote', remote.toString()])
+            .resolves(fakeExecutionResult());
+        const nativeAutoSync = exec
+            .withArgs(['settings', 'autosync', 'on'])
+            .resolves(fakeExecutionResult());
+
+        await repository.setRemote(remote);
+
+        sinon.assert.calledOnceWithExactly(setRemote, [
+            'remote',
+            remote.toString(),
+        ]);
+        const after = statusBarCommands()[1].tooltip;
+        assert.doesNotMatch(after!, /repository with no remote/);
+        sinon.assert.calledOnce(nativeAutoSync);
+    });
+
+    test('marks the status bar as remote-free immediately after clear', async () => {
+        const repository = getRepository();
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({
+                stdout: 'https://example.test/repository\n',
+            })
+        );
+        exec.withArgs(['sync']).resolves(fakeExecutionResult());
+        await repository.periodicSync();
+        assert.doesNotMatch(
+            statusBarCommands()[1].tooltip!,
+            /repository with no remote/
+        );
+        const unset = exec
+            .withArgs(['remote', '--unset'])
+            .resolves(fakeExecutionResult());
+        const nativeAutoSync = exec
+            .withArgs(['settings', 'autosync', 'on'])
+            .resolves(fakeExecutionResult());
+
+        await repository.setRemote();
+
+        sinon.assert.calledOnceWithExactly(unset, ['remote', '--unset']);
+        sinon.assert.calledOnce(nativeAutoSync);
+        assert.match(
+            statusBarCommands()[1].tooltip!,
+            /repository with no remote/
+        );
+    });
+
+    test('failed remote changes preserve displayed and persisted state', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        const replacement = Uri.parse(
+            'https://example.test/replacement'
+        ) as ZitURI;
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({ stdout: `${current.toString()}\n` })
+        );
+        exec.withArgs(['sync']).resolves(fakeExecutionResult());
+        await repository.periodicSync();
+        const before = statusBarCommands()[1].tooltip;
+        const failed = exec
+            .withArgs(['remote', replacement.toString()])
+            .resolves(
+                fakeExecutionResult({
+                    exitCode: 1,
+                    stderr: 'zit remote: rejected\n',
+                })
+            );
+
+        await repository.setRemote(replacement);
+
+        sinon.assert.calledOnce(failed);
+        assert.equal(statusBarCommands()[1].tooltip, before);
+        assert.equal(
+            (await repository.getRemote())?.toString(),
+            current.toString()
         );
     });
 

@@ -820,8 +820,13 @@ export class Repository implements IDisposable, InteractionAPI {
         return this.repository.getRemote();
     }
 
-    public setRemote(url?: ZitURI): Promise<void> {
-        return this.repository.setRemote(url);
+    public async setRemote(url?: ZitURI): Promise<void> {
+        const result = await this.repository.setRemote(url);
+        if (result.exitCode) {
+            return;
+        }
+        this.statusBar.onRemoteChanged(Boolean(url));
+        await this.updateAutoSyncInterval(typedConfig.autoSyncIntervalMs, true);
     }
 
     @throttle

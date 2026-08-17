@@ -45,5 +45,9 @@
     "submenu.commit": "Commit",
     "submenu.merge": "Merge",
     "submenu.stash": "Stash",
-    "submenu.timeline": "Timeline"
+    "submenu.timeline": "Timeline",
+    "submenu.remote": "Remote",
+    "command.showRemote": "Show Remote",
+    "command.setRemote": "Set Remote...",
+    "command.clearRemote": "Clear Remote"
 }

@@ -54,6 +54,7 @@ type CommandKey =
     | 'branchChange'
     | 'cherrypick'
     | 'clean'
+    | 'clearRemote'
     | 'clone'
     | 'closeBranch'
     | 'commit'
@@ -82,9 +83,11 @@ type CommandKey =
     | 'refresh'
     | 'rename'
     | 'revert'
+    | 'setRemote'
     | 'revertAll'
     | 'revertChange'
     | 'showOutput'
+    | 'showRemote'
     | 'stashApply'
     | 'stashDrop'
     | 'stashPop'
@@ -902,6 +905,83 @@ export class CommandCenter {
         );
         if (checkin) {
             await repository.update(checkin);
+        }
+    }
+
+    @command(Inline.Repository)
+    async showRemote(repository: Repository): Promise<void> {
+        const remote = await repository.getRemote();
+        if (!remote) {
+            await window.showInformationMessage(
+                localize(
+                    'no default remote configured',
+                    'No default remote is configured.'
+                )
+            );
+            return;
+        }
+        await window.showInformationMessage(
+            localize(
+                'show default remote',
+                'Default remote: {0}',
+                remote.toString()
+            )
+        );
+    }
+
+    @command(Inline.Repository)
+    async setRemote(repository: Repository): Promise<void> {
+        const current = await repository.getRemote();
+        const remote = await interaction.inputRemoteUrl(current);
+        if (!remote) {
+            return;
+        }
+        if (current && remote.toString() !== current.toString()) {
+            const replace = localize(
+                'replace remote action',
+                '&&Replace Remote'
+            );
+            const choice = await window.showWarningMessage(
+                localize(
+                    'confirm replace default remote',
+                    'Replace the default remote {0} with {1}?',
+                    current.toString(),
+                    remote.toString()
+                ),
+                { modal: true },
+                replace
+            );
+            if (choice !== replace) {
+                return;
+            }
+        }
+        await repository.setRemote(remote);
+    }
+
+    @command(Inline.Repository)
+    async clearRemote(repository: Repository): Promise<void> {
+        const remote = await repository.getRemote();
+        if (!remote) {
+            await window.showInformationMessage(
+                localize(
+                    'no default remote configured',
+                    'No default remote is configured.'
+                )
+            );
+            return;
+        }
+        const clear = localize('clear remote action', '&&Clear Remote');
+        const choice = await window.showWarningMessage(
+            localize(
+                'confirm clear default remote',
+                'Clear the default remote {0}?',
+                remote.toString()
+            ),
+            { modal: true },
+            clear
+        );
+        if (choice === clear) {
+            await repository.setRemote(undefined);
         }
     }
 

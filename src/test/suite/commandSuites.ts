@@ -27,11 +27,13 @@ import {
     ZitHash,
     ZitUsername,
     OpenedRepository,
+    ZitURI,
     RelativePath,
     ResourceStatus,
     StatusString,
 } from '../../openedRepository';
 import { CommandCenter } from '../../commands';
+import * as interaction from '../../interaction';
 import { Suite } from 'mocha';
 import { toZitEmptyUri, toZitUri } from '../../uri';
 import { ZitFileSystemProvider } from '../../fileSystemProvider';
@@ -487,6 +489,152 @@ export function CleanSuite(this: Suite): void {
         );
 
         sinon.assert.notCalled(force);
+    });
+}
+
+export function RemoteSuite(this: Suite): void {
+    test('Show Remote reports the configured default remote', async () => {
+        const repository = getRepository();
+        const remote = Uri.parse('https://example.test/repository') as ZitURI;
+        const getRemote = this.ctx.sandbox
+            .stub(repository, 'getRemote')
+            .resolves(remote);
+        const showInformationMessage = this.ctx.sandbox.stub(
+            window,
+            'showInformationMessage'
+        ) as sinon.SinonStub;
+
+        await commands.executeCommand('zit.showRemote');
+
+        sinon.assert.calledOnce(getRemote);
+        sinon.assert.calledOnceWithExactly(
+            showInformationMessage,
+            `Default remote: ${remote.toString()}`
+        );
+    });
+
+    test('Show Remote reports when no default is configured', async () => {
+        const repository = getRepository();
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(undefined);
+        const showInformationMessage = this.ctx.sandbox.stub(
+            window,
+            'showInformationMessage'
+        ) as sinon.SinonStub;
+
+        await commands.executeCommand('zit.showRemote');
+
+        sinon.assert.calledOnceWithExactly(
+            showInformationMessage,
+            'No default remote is configured.'
+        );
+    });
+
+    test('Set Remote prompts with and replaces the current default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        const replacement = Uri.parse(
+            'https://example.test/replacement'
+        ) as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        const inputRemoteUrl = this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(replacement);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves('&&Replace Remote');
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.calledOnceWithExactly(inputRemoteUrl, current);
+        sinon.assert.calledOnceWithExactly(
+            warning,
+            `Replace the default remote ${current.toString()} with ${replacement.toString()}?`,
+            { modal: true },
+            '&&Replace Remote'
+        );
+        sinon.assert.calledOnceWithExactly(setRemote, replacement);
+    });
+
+    test('Declining Set Remote replacement preserves the default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        const replacement = Uri.parse(
+            'https://example.test/replacement'
+        ) as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(replacement);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves(undefined);
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.calledOnce(warning);
+        sinon.assert.notCalled(setRemote);
+    });
+
+    test('Canceling Set Remote preserves the current default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(undefined);
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.notCalled(setRemote);
+    });
+
+    test('Clear Remote confirms before removing the default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves('&&Clear Remote');
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.clearRemote');
+
+        sinon.assert.calledOnceWithExactly(
+            warning,
+            `Clear the default remote ${current.toString()}?`,
+            { modal: true },
+            '&&Clear Remote'
+        );
+        sinon.assert.calledOnceWithExactly(setRemote, undefined);
+    });
+
+    test('Clear Remote is a no-op when no default is configured', async () => {
+        const repository = getRepository();
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(undefined);
+        const warning = this.ctx.sandbox.stub(window, 'showWarningMessage');
+        const showInformationMessage = this.ctx.sandbox.stub(
+            window,
+            'showInformationMessage'
+        ) as sinon.SinonStub;
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.clearRemote');
+
+        sinon.assert.notCalled(warning);
+        sinon.assert.notCalled(setRemote);
+        sinon.assert.calledOnceWithExactly(
+            showInformationMessage,
+            'No default remote is configured.'
+        );
     });
 }
 

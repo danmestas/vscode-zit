@@ -19,6 +19,7 @@ All notable changes to the Zit extension are documented here.
 - Renamed the per-line annotation command to **Praise** and populated each committed line with its check-in, date, and author from Zit metadata.
 - Restricted automatic repository discovery to materialized Zit checkouts so bare `.zit` stores and non-Zit workspaces stay silent.
 - Changed **Clean** to move confirmed untracked files and directories to the operating-system Trash instead of permanently deleting them with `zit clean --force`.
+- Added **Show Remote**, **Set Remote**, and **Clear Remote** actions with replacement/removal confirmation and immediate status-bar and autosync updates.
 
 ### Removed
 

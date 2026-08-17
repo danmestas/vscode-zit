@@ -551,8 +551,8 @@ export class OpenedRepository {
             : undefined;
     }
 
-    async setRemote(url?: ZitURI): Promise<void> {
-        await this.exec(
+    async setRemote(url?: ZitURI): Promise<ExecResult> {
+        return this.exec(
             url ? ['remote', url.toString()] : ['remote', '--unset']
         );
     }

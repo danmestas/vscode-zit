@@ -47,7 +47,10 @@ Supported workflows include:
 - listing and adding tags;
 - saving, listing, applying, popping, and dropping stashes;
 - pull, push, and sync;
+- showing, setting, and clearing the repository's default remote;
 - exporting the repository to Git.
+
+Replacing or clearing the saved remote requires confirmation. Remote URLs are limited to HTTP or HTTPS and cannot include embedded credentials.
 
 Private branches, canceling tags, and mutating a checkout solely to close it are not exposed because Zit does not provide those operations.
 

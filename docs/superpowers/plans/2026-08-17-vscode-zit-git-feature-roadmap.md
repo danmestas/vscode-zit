@@ -85,11 +85,11 @@ Item 1 is complete. Items 6 and 7 are the current serial implementation wave. Th
 
 **Acceptance criteria:**
 
-- [ ] Show Remote reports the saved URL or that no remote is configured.
-- [ ] Set Remote validates HTTP or HTTPS, rejects embedded credentials, and persists the selected URL.
-- [ ] Clear Remote requires confirmation and removes the saved remote.
-- [ ] Remote changes refresh status-bar and autosync state immediately.
-- [ ] Operational failures preserve the previous remote and surface Zit’s diagnostic.
+- [x] Show Remote reports the saved URL or that no remote is configured.
+- [x] Set Remote validates HTTP or HTTPS, rejects embedded credentials, and persists the selected URL.
+- [x] Clear Remote requires confirmation and removes the saved remote.
+- [x] Remote changes refresh status-bar and autosync state immediately.
+- [x] Operational failures preserve the previous remote and surface Zit’s diagnostic.
 
 ## 7. Zit worktree awareness
 

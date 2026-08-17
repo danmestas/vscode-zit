@@ -301,6 +301,21 @@
                 "command": "zit.gitExport",
                 "title": "Export git",
                 "category": "Zit"
+            },
+            {
+                "command": "zit.showRemote",
+                "title": "%command.showRemote%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.setRemote",
+                "title": "%command.setRemote%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.clearRemote",
+                "title": "%command.clearRemote%",
+                "category": "Zit"
             }
         ],
         "views": {
@@ -520,6 +535,18 @@
                     "when": "zitOpenRepositoryCount"
                 },
                 {
+                    "command": "zit.showRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.setRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.clearRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
                     "command": "zit.open",
                     "when": "zit.found"
                 }
@@ -606,6 +633,11 @@
                     "group": "5_groups@3"
                 },
                 {
+                    "submenu": "zit.remote",
+                    "when": "scmProvider == zit",
+                    "group": "5_groups@4"
+                },
+                {
                     "command": "zit.showOutput",
                     "group": "6_output",
                     "when": "scmProvider == zit"
@@ -650,6 +682,23 @@
                     "command": "zit.tagAdd",
                     "when": "scmProvider == zit",
                     "group": "log@2"
+                }
+            ],
+            "zit.remote": [
+                {
+                    "command": "zit.showRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@0"
+                },
+                {
+                    "command": "zit.setRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@1"
+                },
+                {
+                    "command": "zit.clearRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@2"
                 }
             ],
             "zit.stash": [
@@ -840,6 +889,10 @@
             {
                 "id": "zit.stash",
                 "label": "%submenu.stash%"
+            },
+            {
+                "id": "zit.remote",
+                "label": "%submenu.remote%"
             },
             {
                 "id": "zit.commit",

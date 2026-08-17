@@ -3,6 +3,7 @@ import * as sinon from 'sinon';
 import {
     StatusSuite,
     CleanSuite,
+    RemoteSuite,
     FileSystemSuite,
     DiffSuite,
 } from './commandSuites';
@@ -45,6 +46,7 @@ suite('Zit.OpenedRepo', function (this: Suite) {
     suite('Status', StatusSuite);
     suite('Rename', RenameSuite);
     suite('Clean', CleanSuite);
+    suite('Remote', RemoteSuite);
     suite('FileSystem', FileSystemSuite);
     suite('Diff', DiffSuite);
     suite('Quality of Life', QualityOfLifeSuite);

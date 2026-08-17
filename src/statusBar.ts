@@ -35,6 +35,11 @@ class SyncBar {
         this.syncMessage = 'repository with no remote\n';
     }
 
+    public onRemoteChanged(hasRemote: boolean) {
+        this.icon = 'sync';
+        this.syncMessage = hasRemote ? '' : 'repository with no remote\n';
+    }
+
     public onSyncTimeUpdated(date: Date | undefined) {
         this.nextSyncTime = date;
     }
@@ -102,6 +107,11 @@ export class StatusBarCommands {
 
     public onNoRemote() {
         this.syncBar.onNoRemote();
+        this.update();
+    }
+
+    public onRemoteChanged(hasRemote: boolean) {
+        this.syncBar.onRemoteChanged(hasRemote);
         this.update();
     }
 
