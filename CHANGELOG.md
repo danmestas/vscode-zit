@@ -20,12 +20,13 @@ All notable changes to the Zit extension are documented here.
 - Restricted automatic repository discovery to materialized Zit checkouts so bare `.zit` stores and non-Zit workspaces stay silent.
 - Changed **Clean** to move confirmed untracked files and directories to the operating-system Trash instead of permanently deleting them with `zit clean --force`.
 - Added **Show Remote**, **Set Remote**, and **Clear Remote** actions with replacement/removal confirmation and immediate status-bar and autosync updates.
+- Added symbolic-tag browsing across the repository or a selected check-in, plus confirmed tag cancellation and refreshed Source Control/timeline state.
 
 ### Removed
 
 - Stage, unstage, and commit-staged commands.
 - Web UI, patch, wiki creation, technote creation, and document-rendering features.
-- Private branch creation, tag cancellation, and checkout-close mutation.
+- Private branch creation and checkout-close mutation.
 - Legacy screenshots that depicted the former extension rather than Zit.
 
 ## Project history

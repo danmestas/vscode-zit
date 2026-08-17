@@ -44,7 +44,7 @@ Run **Zit: Praise** from the Command Palette to show each committed line’s che
 Supported workflows include:
 
 - creating and switching branches;
-- listing and adding tags;
+- listing, adding, and canceling symbolic tags, including repository-wide and per-check-in tag views;
 - saving, listing, applying, popping, and dropping stashes;
 - pull, push, and sync;
 - showing, setting, and clearing the repository's default remote;
@@ -52,7 +52,7 @@ Supported workflows include:
 
 Replacing or clearing the saved remote requires confirmation. Remote URLs are limited to HTTP or HTTPS and cannot include embedded credentials.
 
-Private branches, canceling tags, and mutating a checkout solely to close it are not exposed because Zit does not provide those operations.
+Private branches and mutating a checkout solely to close it are not exposed because Zit does not provide those operations.
 
 ## Deliberately unsupported surfaces
 

@@ -45,7 +45,7 @@ Historical content uses virtual Zit document URIs. Timeline enrichment remains l
 | Command family | Behavior |
 | --- | --- |
 | Branch | List, create, and switch branches. |
-| Tag | List and add tags. Tag cancellation is not supported. |
+| Tag | List symbolic tags globally or on one check-in, add a symbolic tag, and cancel a selected symbolic tag after confirmation. Raw and propagating tags stay outside this workflow. |
 | Merge | Merge or cherry-pick supported revisions into the working tree and report command-time conflicts. |
 | Stash | Save, list, show, apply, pop, and drop stashes. |
 

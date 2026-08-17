@@ -109,10 +109,10 @@ Item 1 is complete. Items 6 and 7 are the current serial implementation wave. Th
 
 **Acceptance criteria:**
 
-- [ ] Users can list symbolic tags globally and on one check-in.
-- [ ] Users can cancel a symbolic tag from a selected check-in after confirmation.
-- [ ] Tag changes refresh branch, history, and timeline surfaces.
-- [ ] Raw and propagating tags are not presented as ordinary release tags.
+- [x] Users can list symbolic tags globally and on one check-in.
+- [x] Users can cancel a symbolic tag from a selected check-in after confirmation.
+- [x] Tag changes refresh branch, history, and timeline surfaces.
+- [x] Raw and propagating tags are not presented as ordinary release tags.
 
 ## Explicit non-goals
 

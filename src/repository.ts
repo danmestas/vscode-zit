@@ -659,8 +659,20 @@ export class Repository implements IDisposable, InteractionAPI {
         }
         return result;
     }
-    addTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
-        return this.repository.addTag(checkin, tag);
+    async addTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        return this.runWithProgress(UpdateAll, () =>
+            this.repository.addTag(checkin, tag)
+        );
+    }
+
+    async cancelTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        return this.runWithProgress(UpdateAll, () =>
+            this.repository.cancelTag(checkin, tag)
+        );
+    }
+
+    getTags(checkin?: ZitCheckin): Promise<ZitTag[]> {
+        return this.repository.getTags(checkin);
     }
 
     async updateCommitMessage(

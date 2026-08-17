@@ -382,6 +382,10 @@ export class OpenedRepository {
         await this.exec(['tag', 'add', tag, checkin]);
     }
 
+    async cancelTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        await this.exec(['tag', 'cancel', tag, checkin]);
+    }
+
     async updateCommitMessage(
         checkin: ZitCheckin,
         commitMessage: ZitCommitMessage
@@ -1054,14 +1058,10 @@ export class OpenedRepository {
             'list',
             ...(checkin ? [checkin] : []),
         ]);
-        const tags = result.stdout
+        return result.stdout
             .split('\n')
             .map(tag => tag.trim())
-            .filter(Boolean);
-        if (checkin && /^branch\s+\S/.test(tags[0] ?? '')) {
-            tags.shift();
-        }
-        return tags as ZitTag[];
+            .filter(Boolean) as ZitTag[];
     }
 
     async getBranches(

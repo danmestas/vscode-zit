@@ -156,8 +156,23 @@
                 "category": "Zit"
             },
             {
+                "command": "zit.tagShow",
+                "title": "%command.tagShow%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagShowForCheckin",
+                "title": "%command.tagShowForCheckin%",
+                "category": "Zit"
+            },
+            {
                 "command": "zit.tagAdd",
-                "title": "Add tag...",
+                "title": "%command.tagAdd%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagCancel",
+                "title": "%command.tagCancel%",
                 "category": "Zit"
             },
             {
@@ -530,6 +545,18 @@
                     "when": "zitOpenRepositoryCount"
                 },
                 {
+                    "command": "zit.tagShow",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagShowForCheckin",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagCancel",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
                     "command": "zit.forget",
                     "when": "zitOpenRepositoryCount"
                 },
@@ -670,6 +697,11 @@
                     "group": "5_groups@5"
                 },
                 {
+                    "submenu": "zit.tag",
+                    "when": "scmProvider == zit",
+                    "group": "5_groups@6"
+                },
+                {
                     "command": "zit.showOutput",
                     "group": "6_output",
                     "when": "scmProvider == zit"
@@ -709,11 +741,28 @@
                     "command": "zit.fileLog",
                     "when": "scmProvider == zit",
                     "group": "log@1"
+                }
+            ],
+            "zit.tag": [
+                {
+                    "command": "zit.tagShow",
+                    "when": "scmProvider == zit",
+                    "group": "tag@0"
+                },
+                {
+                    "command": "zit.tagShowForCheckin",
+                    "when": "scmProvider == zit",
+                    "group": "tag@1"
                 },
                 {
                     "command": "zit.tagAdd",
                     "when": "scmProvider == zit",
-                    "group": "log@2"
+                    "group": "tag@2"
+                },
+                {
+                    "command": "zit.tagCancel",
+                    "when": "scmProvider == zit",
+                    "group": "tag@3"
                 }
             ],
             "zit.remote": [
@@ -934,6 +983,10 @@
             {
                 "id": "zit.timeline",
                 "label": "%submenu.timeline%"
+            },
+            {
+                "id": "zit.tag",
+                "label": "%submenu.tag%"
             },
             {
                 "id": "zit.stash",

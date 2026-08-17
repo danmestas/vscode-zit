@@ -93,6 +93,9 @@ type CommandKey =
     | 'stashPop'
     | 'stashSave'
     | 'tagAdd'
+    | 'tagCancel'
+    | 'tagShow'
+    | 'tagShowForCheckin'
     | 'stashShow'
     | 'sync'
     | 'undo'
@@ -937,7 +940,7 @@ export class CommandCenter {
         }
         const refs = await repository.getBranchesAndTags();
 
-        const checkin = await interaction.pickUpdateCheckin(refs);
+        const checkin = await interaction.pickCheckin(refs);
         if (checkin) {
             await repository.update(checkin);
         }
@@ -950,7 +953,7 @@ export class CommandCenter {
 
     @command(Inline.Repository)
     async update(repository: Repository): Promise<void> {
-        const checkin = await interaction.pickUpdateCheckin(
+        const checkin = await interaction.pickCheckin(
             await repository.getBranchesAndTags()
         );
         if (checkin) {
@@ -1115,6 +1118,25 @@ export class CommandCenter {
     }
 
     @command(Inline.Repository)
+    async tagShow(repository: Repository): Promise<void> {
+        await this.showTags(repository);
+    }
+
+    @command(Inline.Repository)
+    async tagShowForCheckin(repository: Repository): Promise<void> {
+        const checkin = await this.pickTagCheckin(
+            repository,
+            localize(
+                'select check-in to show tags',
+                'Select a branch, tag, or check-in to show its tags:'
+            )
+        );
+        if (checkin) {
+            await this.showTags(repository, checkin);
+        }
+    }
+
+    @command(Inline.Repository)
     async tagAdd(repository: Repository, checkin?: ZitCheckin): Promise<void> {
         const target = checkin ?? repository.zitStatus?.checkin;
         if (!target) {
@@ -1123,7 +1145,108 @@ export class CommandCenter {
         const tag = await interaction.inputTagName();
         if (tag) {
             await repository.addTag(target, tag);
+            this.timeline.refresh();
         }
+    }
+
+    @command(Inline.Repository)
+    async tagCancel(
+        repository: Repository,
+        checkin?: ZitCheckin
+    ): Promise<void> {
+        const target =
+            checkin ??
+            (await this.pickTagCheckin(
+                repository,
+                localize(
+                    'select check-in to cancel tag',
+                    'Select a branch, tag, or check-in to cancel a tag from:'
+                )
+            ));
+        if (!target) {
+            return;
+        }
+        const tags = await repository.getTags(target);
+        if (!tags.length) {
+            await window.showInformationMessage(
+                localize(
+                    'no tags on check-in',
+                    'No symbolic tags are attached to {0}.',
+                    target
+                )
+            );
+            return;
+        }
+        const tag = await interaction.pickTag(
+            tags,
+            localize(
+                'select tag to cancel',
+                'Select a tag to cancel from {0}:',
+                target
+            )
+        );
+        if (!tag) {
+            return;
+        }
+        const action = localize('cancel tag action', 'Cancel Tag');
+        const confirmed = await window.showWarningMessage(
+            localize(
+                'confirm cancel tag',
+                "Cancel tag '{0}' from {1}?",
+                tag,
+                target
+            ),
+            { modal: true },
+            action
+        );
+        if (confirmed !== action) {
+            return;
+        }
+        await repository.cancelTag(target, tag);
+        this.timeline.refresh();
+    }
+
+    private async pickTagCheckin(
+        repository: Repository,
+        placeHolder: string
+    ): Promise<ZitCheckin | undefined> {
+        return interaction.pickCheckin(await repository.getBranchesAndTags(), {
+            placeHolder,
+            inputLabel: '$(pencil) Enter a check-in',
+            inputPrompt: 'Enter a hash, branch, or tag',
+        });
+    }
+
+    private async showTags(
+        repository: Repository,
+        checkin?: ZitCheckin
+    ): Promise<void> {
+        const tags = await repository.getTags(checkin);
+        if (!tags.length) {
+            await window.showInformationMessage(
+                checkin
+                    ? localize(
+                          'no tags on check-in',
+                          'No symbolic tags are attached to {0}.',
+                          checkin
+                      )
+                    : localize(
+                          'no repository tags',
+                          'No symbolic tags are defined.'
+                      )
+            );
+            return;
+        }
+        await interaction.pickTag(
+            tags,
+            checkin
+                ? localize(
+                      'tags on check-in',
+                      'Symbolic tags attached to {0}:',
+                      checkin
+                  )
+                : localize('repository tags', 'Repository symbolic tags:')
+        );
     }
 
     @command(Inline.Repository)

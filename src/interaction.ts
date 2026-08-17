@@ -397,13 +397,31 @@ export async function pickBranch(
     return choice?.checkin;
 }
 
-export async function pickUpdateCheckin(
-    refs: [BranchDetails[], ZitTag[]]
+export async function pickTag(
+    tags: ZitTag[],
+    placeHolder: string
+): Promise<ZitTag | undefined> {
+    const choice = await window.showQuickPick(
+        tags.map(tag => new TagItem(tag)),
+        { placeHolder }
+    );
+    return choice?.checkin;
+}
+
+interface PickCheckinOptions {
+    readonly placeHolder?: string;
+    readonly inputLabel?: string;
+    readonly inputPrompt?: string;
+}
+
+export async function pickCheckin(
+    refs: [BranchDetails[], ZitTag[]],
+    options: PickCheckinOptions = {}
 ): Promise<ZitCheckin | undefined> {
     const branches = refs[0].map(ref => new BranchItem(ref));
     const tags = refs[1].map(ref => new TagItem(ref));
     const picks = [
-        new UserInputItem(),
+        new UserInputItem(options.inputLabel, options.inputPrompt),
         {
             kind: QuickPickItemKind.Separator,
             label: '',
@@ -418,7 +436,8 @@ export async function pickUpdateCheckin(
 
     let result: CheckinItem<ZitCheckin> | RunnableQuickPickItem | undefined =
         await window.showQuickPick(picks, {
-            placeHolder: 'Select a branch/tag to update to:',
+            placeHolder:
+                options.placeHolder ?? 'Select a branch/tag to update to:',
             matchOnDescription: true,
         });
     while (result) {
@@ -1124,12 +1143,19 @@ class LiteralRunnableQuickPickItem extends RunnableQuickPickItem {
 
 class UserInputItem extends RunnableQuickPickItem implements QuickPickItem {
     readonly alwaysShow = true;
-    readonly label = '$(pencil) Checkout by hash';
+    readonly label: string;
 
+    constructor(
+        label = '$(pencil) Checkout by hash',
+        private readonly prompt = 'Enter hash/check-in/tag to update to'
+    ) {
+        super();
+        this.label = label;
+    }
     async run(): Promise<CheckinItem<ZitCheckin> | undefined> {
         const userInput = await inputCommon<ZitCheckin>(
             'commit hash',
-            'Enter hash/check-in/tag to update to',
+            this.prompt,
             { placeHolder: 'hash/check-in/tag' }
         );
         if (userInput) {

@@ -143,26 +143,36 @@ export function BranchSuite(this: Suite): void {
         });
     });
 
-    test('uses exact Zit tag list and add argv', async () => {
+    test('uses exact Zit tag list, add, and cancel argv', async () => {
         const exec = getExecStub(this.ctx.sandbox);
         const list = exec.withArgs(['tag', 'list', 'abc123']).resolves(
             fakeExecutionResult({
-                stdout: 'branch trunk\ntrunk\nv1\n',
+                stdout: 'release\nv1\n',
             })
         );
         const add = exec
             .withArgs(['tag', 'add', 'release', 'abc123'])
             .resolves(fakeExecutionResult());
+        const cancel = exec
+            .withArgs(['tag', 'cancel', 'release', 'abc123'])
+            .resolves(fakeExecutionResult());
         const repository = getOpenedRepository();
 
         const tags = await repository.getTags('abc123' as ZitCheckin);
         await repository.addTag('abc123' as ZitCheckin, 'release' as ZitTag);
+        await repository.cancelTag('abc123' as ZitCheckin, 'release' as ZitTag);
 
-        assert.deepEqual(tags, ['trunk', 'v1']);
+        assert.deepEqual(tags, ['release', 'v1']);
         sinon.assert.calledOnceWithExactly(list, ['tag', 'list', 'abc123']);
         sinon.assert.calledOnceWithExactly(add, [
             'tag',
             'add',
+            'release',
+            'abc123',
+        ]);
+        sinon.assert.calledOnceWithExactly(cancel, [
+            'tag',
+            'cancel',
             'release',
             'abc123',
         ]);
@@ -182,6 +192,109 @@ export function BranchSuite(this: Suite): void {
             'release',
             'abc123',
         ]);
+    });
+
+    test('lists repository tags through the Zit command surface', async () => {
+        const list = getExecStub(this.ctx.sandbox)
+            .withArgs(['tag', 'list'])
+            .resolves(
+                fakeExecutionResult({
+                    stdout: 'release\nv1\n',
+                })
+            );
+        const quickPick = this.ctx.sandbox
+            .stub(window, 'showQuickPick')
+            .resolves(undefined);
+
+        await commands.executeCommand('zit.tagShow');
+
+        sinon.assert.calledOnceWithExactly(list, ['tag', 'list']);
+        const items = quickPick.firstCall.args[0] as unknown as {
+            label: string;
+        }[];
+        assert.deepEqual(
+            items.map(item => item.label),
+            ['$(tag) release', '$(tag) v1']
+        );
+    });
+
+    test('lists symbolic tags on a selected check-in', async () => {
+        const repository = getRepository();
+        this.ctx.sandbox
+            .stub(repository, 'getBranchesAndTags')
+            .resolves([[], []]);
+        this.ctx.sandbox
+            .stub(interaction, 'pickCheckin')
+            .resolves('abc123' as ZitCheckin);
+        const getTags = this.ctx.sandbox
+            .stub(repository, 'getTags')
+            .withArgs('abc123' as ZitCheckin)
+            .resolves(['release' as ZitTag]);
+        const quickPick = this.ctx.sandbox
+            .stub(window, 'showQuickPick')
+            .resolves(undefined);
+        const commandCenter = Object.create(
+            CommandCenter.prototype
+        ) as CommandCenter;
+
+        await commandCenter.tagShowForCheckin(repository);
+
+        sinon.assert.calledOnceWithExactly(getTags, 'abc123' as ZitCheckin);
+        const items = quickPick.firstCall.args[0] as unknown as {
+            label: string;
+        }[];
+        assert.deepEqual(
+            items.map(item => item.label),
+            ['$(tag) release']
+        );
+    });
+
+    test('confirms and cancels a selected symbolic tag', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        const list = exec.withArgs(['tag', 'list', 'abc123']).resolves(
+            fakeExecutionResult({
+                stdout: 'release\n',
+            })
+        );
+        const cancel = exec
+            .withArgs(['tag', 'cancel', 'release', 'abc123'])
+            .resolves(fakeExecutionResult());
+        this.ctx.sandbox
+            .stub(window, 'showQuickPick')
+            .callsFake(async items => (await items)[0]);
+        this.ctx.sandbox
+            .stub(window, 'showWarningMessage')
+            .resolves('Cancel Tag' as never);
+
+        await commands.executeCommand('zit.tagCancel', 'abc123' as ZitCheckin);
+
+        sinon.assert.calledOnceWithExactly(list, ['tag', 'list', 'abc123']);
+        sinon.assert.calledOnceWithExactly(cancel, [
+            'tag',
+            'cancel',
+            'release',
+            'abc123',
+        ]);
+    });
+
+    test('does not cancel a tag when confirmation is dismissed', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['tag', 'list', 'abc123']).resolves(
+            fakeExecutionResult({
+                stdout: 'release\n',
+            })
+        );
+        const cancel = exec.withArgs(
+            sinon.match.array.startsWith(['tag', 'cancel'])
+        );
+        this.ctx.sandbox
+            .stub(window, 'showQuickPick')
+            .callsFake(async items => (await items)[0]);
+        this.ctx.sandbox.stub(window, 'showWarningMessage').resolves(undefined);
+
+        await commands.executeCommand('zit.tagCancel', 'abc123' as ZitCheckin);
+
+        sinon.assert.notCalled(cancel);
     });
 
     test('parses the Zit stash list hyphen format', async () => {
@@ -767,7 +880,7 @@ export function BranchSuite(this: Suite): void {
             }[];
             return Promise.resolve(choices[1]);
         });
-        assert.equal(await interaction.pickUpdateCheckin([[], []]), undefined);
+        assert.equal(await interaction.pickCheckin([[], []]), undefined);
         sinon.assert.calledTwice(picker);
     });
 
@@ -886,6 +999,10 @@ export function BranchSuite(this: Suite): void {
         const commandCenter = Object.create(
             CommandCenter.prototype
         ) as CommandCenter;
+        const refreshTimeline = this.ctx.sandbox.stub();
+        Reflect.set(commandCenter, 'timeline', {
+            refresh: refreshTimeline,
+        });
 
         await commandCenter.tagAdd(repository, explicitTarget);
 
@@ -895,6 +1012,7 @@ export function BranchSuite(this: Suite): void {
             'release',
             explicitTarget,
         ]);
+        sinon.assert.calledOnce(refreshTimeline);
     });
 
     test('does not save a stash when dirty tracked files are refused', async () => {

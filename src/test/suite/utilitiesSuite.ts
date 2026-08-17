@@ -492,7 +492,7 @@ function coreInteractionSuite(this: Suite): void {
             ),
             undefined
         );
-        assert.equal(await interaction.pickUpdateCheckin([[], []]), undefined);
+        assert.equal(await interaction.pickCheckin([[], []]), undefined);
         sinon.assert.calledTwice(pick);
         sinon.assert.notCalled(open);
     });
