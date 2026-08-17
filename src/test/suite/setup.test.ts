@@ -345,7 +345,7 @@ suite('Zit setup', function () {
         );
     });
 
-    test('findRoot discovers directory and file .zit markers from nested paths', async () => {
+    test('findRoot requires a materialized Zit checkout marker pair', async () => {
         const temp = await fs.mkdtemp(
             path.join(os.tmpdir(), 'vscode-zit-root-')
         );
@@ -355,6 +355,10 @@ suite('Zit setup', function () {
         await fs.mkdir(path.join(directoryCheckout, '.zit'), {
             recursive: true,
         });
+        await fs.writeFile(
+            path.join(directoryCheckout, '.zit-checkout'),
+            'checkout'
+        );
         await fs.mkdir(nested, { recursive: true });
         const nestedFile = path.join(nested, 'file.txt');
         await fs.writeFile(nestedFile, 'fixture');
@@ -370,7 +374,19 @@ suite('Zit setup', function () {
         const fileCheckout = path.join(temp, 'file-checkout');
         await fs.mkdir(fileCheckout);
         await fs.writeFile(path.join(fileCheckout, '.zit'), 'store');
+        await fs.writeFile(
+            path.join(fileCheckout, '.zit-checkout'),
+            'checkout'
+        );
         assert.equal(await executable.findRoot(fileCheckout), fileCheckout);
+
+        const bareStore = path.join(temp, 'bare-store');
+        await fs.mkdir(path.join(bareStore, '.zit'), { recursive: true });
+        assert.equal(await executable.findRoot(bareStore), undefined);
+        assert.equal(
+            await OpenedRepository.tryOpen(executable, bareStore),
+            undefined
+        );
         assert.equal(await executable.findRoot(temp), undefined);
         assert.equal(
             await executable.findRoot(path.parse(temp).root),

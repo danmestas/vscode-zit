@@ -17,6 +17,7 @@ All notable changes to the Zit extension are documented here.
 - Added **Add to .zitignore** actions for Explorer files and untracked Source Control resources, including multi-selection and duplicate-safe updates.
 - Added an Explorer-side Zit Timeline view with automatic file scoping, project history, bounded paging, commit details, and parent diffs.
 - Renamed the per-line annotation command to **Praise** and populated each committed line with its check-in, date, and author from Zit metadata.
+- Restricted automatic repository discovery to materialized Zit checkouts so bare `.zit` stores and non-Zit workspaces stay silent.
 
 ### Removed
 
