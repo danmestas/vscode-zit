@@ -12,11 +12,12 @@ Use these scenarios to qualify the actual Zit extension surface. Do not reuse or
 
 ## Repository discovery and status
 
-1. Open a folder containing `.zit` and `.zit-checkout`.
+1. Open an initialized checkout containing `.zit` and `.zit-checkout`.
 2. Confirm that Source Control shows Added, Working, and Untracked groups only.
 3. Add a new file, modify a tracked file, and create an untracked file.
 4. Refresh and confirm that each path appears once in the correct group.
 5. Reopen the workspace from a nested folder and confirm upward discovery.
+6. Open a detached worktree containing `.zit-checkout` but no local `.zit` and confirm the repository and worktree commands remain available.
 
 ## Commit and history
 

@@ -20,6 +20,7 @@ import { BranchSuite } from './branchSuite';
 import { RevertSuite } from './revertSuite';
 import { GitExportSuite } from './gitExportSuite';
 import { StatusBarSuite } from './statusBarSuite';
+import { WorktreeSuite } from './worktreeSuite';
 import { workspace } from 'vscode';
 
 suite('Zit.OpenedRepo', function (this: Suite) {
@@ -47,6 +48,7 @@ suite('Zit.OpenedRepo', function (this: Suite) {
     suite('Rename', RenameSuite);
     suite('Clean', CleanSuite);
     suite('Remote', RemoteSuite);
+    suite('Worktrees', WorktreeSuite);
     suite('FileSystem', FileSystemSuite);
     suite('Diff', DiffSuite);
     suite('Quality of Life', QualityOfLifeSuite);

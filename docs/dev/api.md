@@ -11,7 +11,7 @@ This document is the maintained product contract for the Zit extension. Command 
 | `zit.open` | Open an existing checkout selected by the user. |
 | `zit.refresh` | Refresh status, checkout identity, and remote counters. |
 
-A checkout is discoverable when `.zit` and `.zit-checkout` are present in the workspace folder or one of its parents.
+A checkout is discoverable when a regular `.zit-checkout` file is present in the workspace folder or one of its parents. `.zit` may be absent from detached worktrees whose repository store lives elsewhere.
 
 ## Working tree and commits
 

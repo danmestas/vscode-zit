@@ -6,7 +6,7 @@ This extension integrates [Zit](https://fossil.craftdesign.group/zit/home) repos
 
 Install a current `zit` executable and make it available on `PATH`, or set `zit.path` to its absolute path. Official binaries and source archives are available from the [Zit download page](https://fossil.craftdesign.group/zit/uv/download.html).
 
-The extension discovers a repository by walking upward from each workspace folder until it finds a `.zit` marker. A materialized working tree also contains `.zit-checkout`.
+The extension discovers a checkout by walking upward from each workspace folder until it finds the regular `.zit-checkout` file. A checkout initialized in its own repository also has a `.zit` store; a detached worktree can use a store elsewhere and therefore has no local `.zit`.
 
 ## Workflows
 
@@ -81,7 +81,7 @@ Run `zit version` in the integrated terminal. If it succeeds there, reload the w
 
 ### A repository is not detected
 
-Open a folder inside the checkout and confirm that `.zit` exists in that folder or one of its parents. An opened working tree also has `.zit-checkout`. Use **Zit: Open Repository** when you need to select a repository explicitly.
+Open a folder inside the checkout and confirm that `.zit-checkout` is a regular file in that folder or one of its parents. Initialized checkouts also have a local `.zit` store, while detached worktrees may not. Use **Zit: Open Repository** when you need to select a checkout explicitly.
 
 ### A command fails
 

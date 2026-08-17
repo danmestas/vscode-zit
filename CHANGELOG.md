@@ -7,7 +7,7 @@ All notable changes to the Zit extension are documented here.
 ### Changed
 
 - Ported the extension identity, configuration namespace, command IDs, URI schemes, and packaging from Fossil to Zit.
-- Replaced the executable boundary with `ZitExecutable` and repository discovery based on `.zit` plus `.zit-checkout`.
+- Replaced the executable boundary with `ZitExecutable` and repository discovery based on the regular `.zit-checkout` marker, including detached worktrees whose store lives elsewhere.
 - Reworked Source Control around Zit’s no-staging model with Added, Working, and Untracked groups.
 - Updated commit, update, revert, rename, merge, history, Praise, branch, tag, stash, sync, and Git export workflows for Zit command contracts.
 - Updated integration fixtures to initialize fresh Zit checkouts and use Zit output contracts.

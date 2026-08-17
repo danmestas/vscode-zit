@@ -41,6 +41,7 @@ import {
     TimelineOptions,
     UserPath,
     ZitURI,
+    ZitWorktree,
 } from './openedRepository';
 import {
     anyEvent,
@@ -840,6 +841,15 @@ export class Repository implements IDisposable, InteractionAPI {
         );
         // Exclude tags that are branches
         return [branches, tags.filter(tag => !branchesSet.has(tag))];
+    }
+
+    @throttle
+    public getWorktrees(): Promise<ZitWorktree[]> {
+        return this.repository.getWorktrees();
+    }
+
+    public createWorktree(destination: ZitRoot): Promise<ExecResult> {
+        return this.repository.createWorktree(destination);
     }
 
     /** Show one committed file change against the check-in's primary parent. */

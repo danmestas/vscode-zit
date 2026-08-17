@@ -316,6 +316,21 @@
                 "command": "zit.clearRemote",
                 "title": "%command.clearRemote%",
                 "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeOpen",
+                "title": "%command.worktreeOpen%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeOpenNewWindow",
+                "title": "%command.worktreeOpenNewWindow%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeCreate",
+                "title": "%command.worktreeCreate%",
+                "category": "Zit"
             }
         ],
         "views": {
@@ -547,6 +562,18 @@
                     "when": "zitOpenRepositoryCount"
                 },
                 {
+                    "command": "zit.worktreeOpen",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.worktreeOpenNewWindow",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.worktreeCreate",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
                     "command": "zit.open",
                     "when": "zit.found"
                 }
@@ -638,6 +665,11 @@
                     "group": "5_groups@4"
                 },
                 {
+                    "submenu": "zit.worktree",
+                    "when": "scmProvider == zit",
+                    "group": "5_groups@5"
+                },
+                {
                     "command": "zit.showOutput",
                     "group": "6_output",
                     "when": "scmProvider == zit"
@@ -699,6 +731,23 @@
                     "command": "zit.clearRemote",
                     "when": "scmProvider == zit",
                     "group": "remote@2"
+                }
+            ],
+            "zit.worktree": [
+                {
+                    "command": "zit.worktreeOpen",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@0"
+                },
+                {
+                    "command": "zit.worktreeOpenNewWindow",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@1"
+                },
+                {
+                    "command": "zit.worktreeCreate",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@2"
                 }
             ],
             "zit.stash": [
@@ -893,6 +942,10 @@
             {
                 "id": "zit.remote",
                 "label": "%submenu.remote%"
+            },
+            {
+                "id": "zit.worktree",
+                "label": "%submenu.worktree%"
             },
             {
                 "id": "zit.commit",

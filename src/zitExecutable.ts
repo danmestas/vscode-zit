@@ -140,14 +140,11 @@ export class ZitExecutable {
 
         while (true) {
             try {
-                const store = await fs.stat(path.join(current, '.zit'));
-                if (store.isDirectory() || store.isFile()) {
-                    const checkout = await fs.stat(
-                        path.join(current, '.zit-checkout')
-                    );
-                    if (checkout.isFile()) {
-                        return current as ZitRoot;
-                    }
+                const checkout = await fs.stat(
+                    path.join(current, '.zit-checkout')
+                );
+                if (checkout.isFile()) {
+                    return current as ZitRoot;
                 }
             } catch (error) {
                 const code = (error as NodeJS.ErrnoException).code;

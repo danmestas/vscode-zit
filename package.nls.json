@@ -49,5 +49,9 @@
     "submenu.remote": "Remote",
     "command.showRemote": "Show Remote",
     "command.setRemote": "Set Remote...",
-    "command.clearRemote": "Clear Remote"
+    "command.clearRemote": "Clear Remote",
+    "submenu.worktree": "Worktrees",
+    "command.worktreeOpen": "Open Worktree...",
+    "command.worktreeOpenNewWindow": "Open Worktree in New Window...",
+    "command.worktreeCreate": "Create Detached Worktree..."
 }

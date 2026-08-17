@@ -44,6 +44,13 @@ export type ZitSpecialTags = 'current' | 'parent' | 'tip';
 export type ZitTag = Distinct<string, 'Zit tag name'>;
 export type ZitHash = Distinct<string, 'Zit SHA3-256 hash'>;
 export type ZitCheckin = ZitBranch | ZitTag | ZitHash | ZitSpecialTags;
+
+export interface ZitWorktree {
+    readonly path: ZitRoot;
+    readonly branch?: ZitBranch;
+    readonly checkin?: ZitCheckin;
+    readonly isCurrent: boolean;
+}
 /** Stdout of `zit status`. */
 export type StatusString = Distinct<string, 'zit status stdout'>;
 /** Any commit message */
@@ -216,14 +223,10 @@ export class OpenedRepository {
         directory: ZitRoot
     ): Promise<boolean> {
         try {
-            const [store, checkout] = await Promise.all([
-                fs.stat(path.join(directory, '.zit')),
-                fs.stat(path.join(directory, '.zit-checkout')),
-            ]);
-            if (
-                !(store.isDirectory() || store.isFile()) ||
-                !checkout.isFile()
-            ) {
+            const checkout = await fs.stat(
+                path.join(directory, '.zit-checkout')
+            );
+            if (!checkout.isFile()) {
                 return false;
             }
 
@@ -323,6 +326,56 @@ export class OpenedRepository {
         return (await this.getBranches({ includeClosed: true })).find(
             branch => branch.isCurrent
         )?.name;
+    }
+
+    async getWorktrees(): Promise<ZitWorktree[]> {
+        const result = await this.exec(['worktrees']);
+        if (result.exitCode) {
+            throw new Error(result.stderr.trim() || 'zit worktrees failed');
+        }
+
+        return result.stdout
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map(line => {
+                const marked = /^(\*| ) (.+)$/.exec(line);
+                if (!marked) {
+                    throw new Error(`Unexpected zit worktrees output: ${line}`);
+                }
+
+                const worktree: {
+                    path: ZitRoot;
+                    branch?: ZitBranch;
+                    checkin?: ZitCheckin;
+                    isCurrent: boolean;
+                } = {
+                    path: marked[2] as ZitRoot,
+                    isCurrent: marked[1] === '*',
+                };
+                const state = /^(.*?) +\((.*)\)$/.exec(marked[2]);
+                if (!state) {
+                    return worktree;
+                }
+
+                const checkedOut = /^(.*) at ([0-9a-f]+)$/i.exec(state[2]);
+                const unborn = /^(.*), unborn$/.exec(state[2]);
+                if (checkedOut) {
+                    worktree.path = state[1] as ZitRoot;
+                    worktree.branch = checkedOut[1] as ZitBranch;
+                    worktree.checkin = checkedOut[2] as ZitCheckin;
+                } else if (unborn) {
+                    worktree.path = state[1] as ZitRoot;
+                    worktree.branch = unborn[1] as ZitBranch;
+                }
+                return worktree;
+            });
+    }
+
+    async createWorktree(destination: ZitRoot): Promise<ExecResult> {
+        return this.executable.exec(destination, [
+            'open',
+            `--store=${this.root}`,
+        ]);
     }
 
     async addTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {

@@ -97,11 +97,11 @@ Item 1 is complete. Items 6 and 7 are the current serial implementation wave. Th
 
 **Acceptance criteria:**
 
-- [ ] Registered worktrees display their path, branch, check-in prefix, and current-tree marker.
-- [ ] Users can open a selected worktree in the current or a new VS Code window.
-- [ ] Users can create a detached worktree in a selected empty directory against the current repository store.
-- [ ] Creation refuses non-empty directories and leaves failed destinations unregistered.
-- [ ] No command deletes worktree directories; Zit’s advisory registry remains authoritative.
+- [x] Registered worktrees display their path, branch, check-in prefix, and current-tree marker.
+- [x] Users can open a selected worktree in the current or a new VS Code window.
+- [x] Users can create a detached worktree in a selected empty directory against the current repository store.
+- [x] Creation refuses non-empty directories and leaves failed destinations unregistered.
+- [x] No command deletes worktree directories; Zit’s advisory registry remains authoritative.
 
 ## 8. Complete tag management
 

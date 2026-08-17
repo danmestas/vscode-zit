@@ -345,7 +345,7 @@ suite('Zit setup', function () {
         );
     });
 
-    test('findRoot requires a materialized Zit checkout marker pair', async () => {
+    test('findRoot discovers initialized and detached Zit checkouts', async () => {
         const temp = await fs.mkdtemp(
             path.join(os.tmpdir(), 'vscode-zit-root-')
         );
@@ -371,14 +371,16 @@ suite('Zit setup', function () {
             directoryCheckout
         );
 
-        const fileCheckout = path.join(temp, 'file-checkout');
-        await fs.mkdir(fileCheckout);
-        await fs.writeFile(path.join(fileCheckout, '.zit'), 'store');
+        const detachedCheckout = path.join(temp, 'detached-checkout');
+        await fs.mkdir(detachedCheckout);
         await fs.writeFile(
-            path.join(fileCheckout, '.zit-checkout'),
+            path.join(detachedCheckout, '.zit-checkout'),
             'checkout'
         );
-        assert.equal(await executable.findRoot(fileCheckout), fileCheckout);
+        assert.equal(
+            await executable.findRoot(detachedCheckout),
+            detachedCheckout
+        );
 
         const bareStore = path.join(temp, 'bare-store');
         await fs.mkdir(path.join(bareStore, '.zit'), { recursive: true });
@@ -404,7 +406,10 @@ suite('Zit setup', function () {
         assert.equal(await executable.findRoot('/dev/null'), undefined);
         const unsupportedMarker = path.join(temp, 'unsupported-marker');
         await fs.mkdir(unsupportedMarker);
-        await fs.symlink('/dev/null', path.join(unsupportedMarker, '.zit'));
+        await fs.symlink(
+            '/dev/null',
+            path.join(unsupportedMarker, '.zit-checkout')
+        );
         assert.equal(await executable.findRoot(unsupportedMarker), undefined);
         assert.equal(
             await executable.findRoot(path.join(temp, 'missing-input')),
@@ -412,7 +417,10 @@ suite('Zit setup', function () {
         );
         const loopCheckout = path.join(temp, 'loop-checkout');
         await fs.mkdir(loopCheckout);
-        await fs.symlink('.zit', path.join(loopCheckout, '.zit'));
+        await fs.symlink(
+            '.zit-checkout',
+            path.join(loopCheckout, '.zit-checkout')
+        );
         await assert.rejects(
             executable.findRoot(loopCheckout),
             (error: NodeJS.ErrnoException) => error.code === 'ELOOP'
@@ -454,19 +462,18 @@ suite('Zit setup', function () {
         const materialized = path.join(temp, 'materialized') as ZitRoot;
         const unborn = path.join(temp, 'unborn') as ZitRoot;
         const bare = path.join(temp, 'bare') as ZitRoot;
-        const fileMaterialized = path.join(
+        const detachedMaterialized = path.join(
             temp,
-            'file-materialized'
+            'detached-materialized'
         ) as ZitRoot;
         for (const root of [materialized, unborn]) {
             await fs.mkdir(path.join(root, '.zit'), { recursive: true });
             await fs.writeFile(path.join(root, '.zit-checkout'), 'checkout');
         }
         await fs.mkdir(bare);
-        await fs.mkdir(fileMaterialized);
-        await fs.writeFile(path.join(fileMaterialized, '.zit'), 'store');
+        await fs.mkdir(detachedMaterialized);
         await fs.writeFile(
-            path.join(fileMaterialized, '.zit-checkout'),
+            path.join(detachedMaterialized, '.zit-checkout'),
             'checkout'
         );
         const invalidCheckout = path.join(temp, 'invalid-checkout') as ZitRoot;
@@ -478,8 +485,7 @@ suite('Zit setup', function () {
         await fs.writeFile(notDirectory, 'file');
         const loop = path.join(temp, 'loop') as ZitRoot;
         await fs.mkdir(loop);
-        await fs.symlink('.zit', path.join(loop, '.zit'));
-        await fs.writeFile(path.join(loop, '.zit-checkout'), 'checkout');
+        await fs.symlink('.zit-checkout', path.join(loop, '.zit-checkout'));
 
         const executable = new ZitExecutable(outputChannel());
         const exec = sandbox
@@ -511,7 +517,10 @@ suite('Zit setup', function () {
             true
         );
         assert.equal(
-            await OpenedRepository.isMaterialized(executable, fileMaterialized),
+            await OpenedRepository.isMaterialized(
+                executable,
+                detachedMaterialized
+            ),
             true
         );
         assert.equal(
@@ -797,6 +806,9 @@ suite('Zit setup', function () {
             'zit.timelineRefresh',
             'zit.undo',
             'zit.update',
+            'zit.worktreeCreate',
+            'zit.worktreeOpen',
+            'zit.worktreeOpenNewWindow',
         ];
         const removed = [
             'zit.close',

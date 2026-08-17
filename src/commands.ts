@@ -101,7 +101,10 @@ type CommandKey =
     | 'timelineOpen'
     | 'timelineProject'
     | 'timelineRefresh'
-    | 'update';
+    | 'update'
+    | 'worktreeCreate'
+    | 'worktreeOpen'
+    | 'worktreeOpenNewWindow';
 export type CommandId = `zit.${CommandKey}`;
 
 interface Command {
@@ -329,6 +332,53 @@ export class CommandCenter {
         if (root) {
             await this.openRepository(root);
         }
+    }
+
+    private async openSelectedWorktree(
+        repository: Repository,
+        forceNewWindow: boolean
+    ): Promise<void> {
+        const selected = await interaction.pickWorktree(
+            await repository.getWorktrees()
+        );
+        if (!selected) {
+            return;
+        }
+        await commands.executeCommand(
+            'vscode.openFolder',
+            Uri.file(selected.path),
+            forceNewWindow
+                ? { forceNewWindow: true }
+                : { forceReuseWindow: true }
+        );
+    }
+
+    @command(Inline.Repository)
+    async worktreeOpen(repository: Repository): Promise<void> {
+        await this.openSelectedWorktree(repository, false);
+    }
+
+    @command(Inline.Repository)
+    async worktreeOpenNewWindow(repository: Repository): Promise<void> {
+        await this.openSelectedWorktree(repository, true);
+    }
+
+    @command(Inline.Repository)
+    async worktreeCreate(repository: Repository): Promise<void> {
+        const destination = await interaction.selectEmptyWorktreeDirectory();
+        if (!destination) {
+            return;
+        }
+
+        const result = await repository.createWorktree(destination);
+        if (result.exitCode) {
+            return;
+        }
+        await commands.executeCommand(
+            'vscode.openFolder',
+            Uri.file(destination),
+            { forceNewWindow: true }
+        );
     }
 
     @command()

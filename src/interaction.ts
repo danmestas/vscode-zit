@@ -37,6 +37,7 @@ import {
     RelativePath,
     StashID,
     SyncCredentials,
+    ZitWorktree,
 } from './openedRepository';
 import * as humanise from './humanise';
 import { Repository, LogEntriesOptions } from './repository';
@@ -84,6 +85,27 @@ export async function selectCheckoutDirectory(
         lastUsedZitRoot = uri;
     }
     return uri?.fsPath as ZitRoot | undefined;
+}
+
+export async function selectEmptyWorktreeDirectory(): Promise<
+    ZitRoot | undefined
+> {
+    const root = await selectCheckoutDirectory('Create');
+    if (!root) {
+        return undefined;
+    }
+
+    const entries = await workspace.fs.readDirectory(Uri.file(root));
+    if (entries.length) {
+        await window.showErrorMessage(
+            localize(
+                'worktree directory not empty',
+                'Select an empty directory for the detached worktree.'
+            )
+        );
+        return undefined;
+    }
+    return root;
 }
 
 export async function runCloneWithProgress<T>(
@@ -619,6 +641,51 @@ async function presentCommitDetails(
     });
 
     return choice as RunnableQuickPickItem;
+}
+interface WorktreeQuickPickItem extends QuickPickItem {
+    readonly worktree: ZitWorktree;
+}
+
+export async function pickWorktree(
+    worktrees: ZitWorktree[]
+): Promise<ZitWorktree | undefined> {
+    if (!worktrees.length) {
+        await window.showInformationMessage(
+            localize(
+                'no registered worktrees',
+                'There are no registered Zit worktrees.'
+            )
+        );
+        return undefined;
+    }
+
+    const item = await window.showQuickPick<WorktreeQuickPickItem>(
+        worktrees.map(worktree => ({
+            label: `$(folder) ${path.basename(worktree.path) || worktree.path}`,
+            description: worktree.isCurrent
+                ? localize('current worktree', 'Current worktree')
+                : undefined,
+            detail: `${worktree.path} • ${
+                worktree.branch
+                    ? `${worktree.branch} • ${
+                          worktree.checkin ??
+                          localize('unborn checkout', 'Unborn checkout')
+                      }`
+                    : localize(
+                          'checkout state unavailable',
+                          'Checkout state unavailable'
+                      )
+            }`,
+            worktree,
+        })),
+        {
+            placeHolder: localize(
+                'select registered worktree',
+                'Select a registered Zit worktree'
+            ),
+        }
+    );
+    return item?.worktree;
 }
 
 async function editCommitMessage(
