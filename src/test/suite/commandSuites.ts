@@ -383,44 +383,56 @@ export function StatusSuite(this: Suite): void {
 }
 
 export function CleanSuite(this: Suite): void {
-    test('Clean previews then force-deletes untracked files', async () => {
+    test('Clean moves previewed untracked resources to Trash', async () => {
+        const repository = getRepository();
+        const filePath = '.zit-trash-test-file' as RelativePath;
+        const folderPath = '.zit-trash-test-folder' as RelativePath;
+        const fileUri = repository.toUri(filePath);
+        const folderUri = repository.toUri(folderPath);
+        await workspace.fs.writeFile(fileUri, new Uint8Array([1]));
+        await workspace.fs.createDirectory(folderUri);
         const execStub = getExecStub(this.ctx.sandbox);
         const preview = execStub.withArgs(['clean', '--dry-run']).resolves(
             fakeExecutionResult({
-                stdout: 'a.txt\nb.txt\n',
+                stdout: `${filePath}\n${folderPath}\n`,
             })
         );
-        const force = execStub
-            .withArgs(['clean', '--force'])
-            .resolves(fakeExecutionResult());
+        const force = execStub.withArgs(['clean', '--force']);
         const warning = this.ctx.sandbox.stub(
             window,
             'showWarningMessage'
         ) as sinon.SinonStub;
-        warning.resolves('&&Delete Files');
+        warning.resolves('&&Move to Trash');
 
         await commands.executeCommand('zit.clean');
 
         sinon.assert.calledOnceWithExactly(preview, ['clean', '--dry-run']);
         sinon.assert.calledOnceWithExactly(
             warning,
-            'Are you sure you want to DELETE 2 files?\nThis is IRREVERSIBLE!\nThese files will be FOREVER LOST if you proceed.',
+            'Move 2 untracked resources to the Trash?',
             { modal: true },
-            '&&Delete Files'
+            '&&Move to Trash'
         );
-        sinon.assert.calledOnceWithExactly(force, ['clean', '--force']);
+        await assert.rejects(Promise.resolve(workspace.fs.stat(fileUri)));
+        await assert.rejects(Promise.resolve(workspace.fs.stat(folderUri)));
+        sinon.assert.notCalled(force);
     });
 
     test('Canceling clean leaves untracked files untouched', async () => {
+        const repository = getRepository();
+        const filePath = '.zit-trash-cancel-test' as RelativePath;
+        const fileUri = repository.toUri(filePath);
+        await workspace.fs.writeFile(fileUri, new Uint8Array([1]));
         const execStub = getExecStub(this.ctx.sandbox);
         execStub
             .withArgs(['clean', '--dry-run'])
-            .resolves(fakeExecutionResult({ stdout: 'a.txt\n' }));
+            .resolves(fakeExecutionResult({ stdout: `${filePath}\n` }));
         const force = execStub.withArgs(['clean', '--force']);
         this.ctx.sandbox.stub(window, 'showWarningMessage').resolves(undefined);
 
         await commands.executeCommand('zit.clean');
 
+        await workspace.fs.stat(fileUri);
         sinon.assert.notCalled(force);
     });
 
@@ -453,6 +465,27 @@ export function CleanSuite(this: Suite): void {
         await commands.executeCommand('zit.clean');
 
         sinon.assert.notCalled(warning);
+        sinon.assert.notCalled(force);
+    });
+
+    test('Clean surfaces Trash failures without permanent deletion', async () => {
+        const missingPath = '.zit-trash-missing-test' as RelativePath;
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['clean', '--dry-run'])
+            .resolves(fakeExecutionResult({ stdout: `${missingPath}\n` }));
+        const force = execStub.withArgs(['clean', '--force']);
+        (
+            this.ctx.sandbox.stub(
+                window,
+                'showWarningMessage'
+            ) as sinon.SinonStub
+        ).resolves('&&Move to Trash');
+
+        await assert.rejects(
+            Promise.resolve(commands.executeCommand('zit.clean'))
+        );
+
         sinon.assert.notCalled(force);
     });
 }

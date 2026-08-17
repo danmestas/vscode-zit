@@ -31,7 +31,7 @@ import {
     ZitCommitMessage,
     ResourceStatus,
 } from './openedRepository';
-import type { Commit } from './openedRepository';
+import type { Commit, RelativePath } from './openedRepository';
 import type { Model } from './model';
 import { ZitResource, CommitOptions, Repository } from './repository';
 import { ZitResourceGroup, isResourceGroup } from './resourceGroups';
@@ -631,8 +631,20 @@ export class CommandCenter {
             return;
         }
         const paths = preview.stdout.split(/\r?\n/).filter(Boolean);
-        if (paths.length && (await interaction.confirmDeleteResources(paths))) {
-            await repository.clean(false);
+        if (
+            !paths.length ||
+            !(await interaction.confirmMoveResourcesToTrash(paths))
+        ) {
+            return;
+        }
+        for (const rawPath of paths) {
+            await workspace.fs.delete(
+                repository.toUri(rawPath as RelativePath),
+                {
+                    recursive: true,
+                    useTrash: true,
+                }
+            );
         }
     }
 

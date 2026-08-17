@@ -823,34 +823,29 @@ export async function confirmDiscardAllChanges(
     return choice === discard;
 }
 
-export async function confirmDeleteResources(
+export async function confirmMoveResourcesToTrash(
     this: void,
     paths: string[]
 ): Promise<boolean> {
-    let message: string;
-    let yes: string;
-    if (paths.length == 1) {
-        message = localize(
-            'confirm delete',
-            'Are you sure you want to DELETE {0}?\nThis is IRREVERSIBLE!\nThis file will be FOREVER LOST if you proceed.',
-            path.basename(paths[0])
-        );
-        yes = localize('delete file', '&&Delete file');
-    } else {
-        message = localize(
-            'confirm delete multiple',
-            'Are you sure you want to DELETE {0} files?\nThis is IRREVERSIBLE!\nThese files will be FOREVER LOST if you proceed.',
-            paths.length
-        );
-        yes = localize('delete files', '&&Delete Files');
-    }
-
+    const message =
+        paths.length === 1
+            ? localize(
+                  'confirm move to trash',
+                  'Move {0} to the Trash?',
+                  path.basename(paths[0])
+              )
+            : localize(
+                  'confirm move multiple to trash',
+                  'Move {0} untracked resources to the Trash?',
+                  paths.length
+              );
+    const move = localize('move to trash', '&&Move to Trash');
     const choice = await window.showWarningMessage(
         message,
         { modal: true },
-        yes
+        move
     );
-    return choice === yes;
+    return choice === move;
 }
 
 export async function confirmDiscardChanges(
