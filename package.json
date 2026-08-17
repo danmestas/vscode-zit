@@ -123,6 +123,12 @@
                 "icon": "$(go-to-file)"
             },
             {
+                "command": "zit.timelineCompare",
+                "title": "%command.timelineCompare%",
+                "category": "Zit",
+                "icon": "$(compare-changes)"
+            },
+            {
                 "command": "zit.forget",
                 "title": "%command.forget%",
                 "category": "Zit"
@@ -267,6 +273,12 @@
                 "category": "Zit"
             },
             {
+                "command": "zit.compare",
+                "title": "%command.compare%",
+                "category": "Zit",
+                "icon": "$(compare-changes)"
+            },
+            {
                 "command": "zit.revertChange",
                 "title": "Revert Change",
                 "category": "Zit",
@@ -383,6 +395,13 @@
                     "group": "navigation@2"
                 }
             ],
+            "view/item/context": [
+                {
+                    "command": "zit.timelineCompare",
+                    "when": "view == zit.timeline && viewItem == zitTimelineCommit",
+                    "group": "inline@1"
+                }
+            ],
             "commandPalette": [
                 {
                     "command": "zit.timelineLoadMore",
@@ -390,6 +409,10 @@
                 },
                 {
                     "command": "zit.timelineOpen",
+                    "when": "false"
+                },
+                {
+                    "command": "zit.timelineCompare",
                     "when": "false"
                 },
                 {
@@ -462,6 +485,10 @@
                 },
                 {
                     "command": "zit.branchChange",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.compare",
                     "when": "zitOpenRepositoryCount"
                 },
                 {
@@ -741,6 +768,11 @@
                     "command": "zit.fileLog",
                     "when": "scmProvider == zit",
                     "group": "log@1"
+                },
+                {
+                    "command": "zit.compare",
+                    "when": "scmProvider == zit",
+                    "group": "log@2"
                 }
             ],
             "zit.tag": [

@@ -21,6 +21,7 @@ import {
     BranchDetails,
     Commit,
     CommitDetails,
+    FileStatus,
     ZitBranch,
     ZitCheckin,
     ZitClass,
@@ -896,6 +897,13 @@ export class Repository implements IDisposable, InteractionAPI {
             right,
             title,
             { preview: false } as TextDocumentShowOptions
+        );
+    }
+
+    public diff(from: ZitCheckin, to: ZitCheckin): Promise<FileStatus[]> {
+        return this.repository.diff(
+            this.resolveHistoryCheckin(from),
+            this.resolveHistoryCheckin(to)
         );
     }
 

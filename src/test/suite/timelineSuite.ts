@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { window } from 'vscode';
 import * as assert from 'assert/strict';
-import { ZitUriParams, toZitUri } from '../../uri';
+import { ZitUriParams, toZitEmptyUri, toZitUri } from '../../uri';
 import type { DocumentFsPath } from '../../zitExecutable';
 import {
     add,
@@ -212,6 +212,67 @@ export function timelineSuite(this: Suite): void {
                 [ResourceStatus.DELETED, 'deleted/name.bin'],
                 [ResourceStatus.ADDED, 'added.bin'],
             ]
+        );
+    });
+
+    test('compares arbitrary refs with Zit name-status records', async () => {
+        const repository = getRepository();
+        const exec = getExecStub(this.ctx.sandbox);
+        const from = 'release-1' as ZitCheckin;
+        const to = 'feature/current' as ZitCheckin;
+        exec.withArgs(['diff', '--brief', '--from', from, '--to', to]).resolves(
+            fakeExecutionResult({
+                stdout:
+                    'A added.txt\n' +
+                    'M mode\\schange.sh\n' +
+                    'D deleted\\\\name.bin\n' +
+                    'ignored row\n',
+            })
+        );
+
+        const files = await (
+            repository as unknown as {
+                diff(
+                    from: ZitCheckin,
+                    to: ZitCheckin
+                ): Promise<
+                    {
+                        status: ResourceStatus;
+                        path: RelativePath;
+                    }[]
+                >;
+            }
+        ).diff(from, to);
+
+        assert.deepEqual(
+            files.map(file => [file.status, file.path]),
+            [
+                [ResourceStatus.ADDED, 'added.txt'],
+                [ResourceStatus.MODIFIED, 'mode change.sh'],
+                [ResourceStatus.DELETED, 'deleted/name.bin'],
+            ]
+        );
+    });
+
+    test('surfaces Zit diagnostics for unresolved comparison refs', async () => {
+        const repository = getRepository();
+        const exec = getExecStub(this.ctx.sandbox);
+        const from = 'missing' as ZitCheckin;
+        const to = 'trunk' as ZitCheckin;
+        exec.withArgs(['diff', '--brief', '--from', from, '--to', to]).resolves(
+            fakeExecutionResult({
+                exitCode: 1,
+                stderr: "zit diff: check-in 'missing' not found\n",
+            })
+        );
+
+        await assert.rejects(
+            (
+                repository as unknown as {
+                    diff(from: ZitCheckin, to: ZitCheckin): Promise<unknown>;
+                }
+            ).diff(from, to),
+            /zit diff: check-in 'missing' not found/
         );
     });
 
@@ -1119,5 +1180,101 @@ export function timelineSuite(this: Suite): void {
             commit.hash,
             ResourceStatus.MODIFIED
         );
+    });
+
+    test('Compare opens exact ref and timeline ranges in one changes editor', async () => {
+        const from = 'release-1' as ZitCheckin;
+        const to = 'trunk' as ZitCheckin;
+        const root = vscode.Uri.file('/tmp/zit-compare');
+        const files = [
+            {
+                klass: 'ADDED' as ZitClass,
+                status: ResourceStatus.ADDED,
+                path: 'added.txt' as RelativePath,
+            },
+            {
+                klass: 'EDITED' as ZitClass,
+                status: ResourceStatus.MODIFIED,
+                path: 'mode.sh' as RelativePath,
+            },
+            {
+                klass: 'DELETED' as ZitClass,
+                status: ResourceStatus.DELETED,
+                path: 'deleted.txt' as RelativePath,
+            },
+        ];
+        const getBranchesAndTags = this.ctx.sandbox.stub().resolves([[], []]);
+        const diff = this.ctx.sandbox.stub().resolves(files);
+        const repository = {
+            root: root.fsPath,
+            getBranchesAndTags,
+            diff,
+        } as unknown as Repository;
+        const pickCheckin = this.ctx.sandbox.stub(interaction, 'pickCheckin');
+        pickCheckin.onFirstCall().resolves(from);
+        pickCheckin.onSecondCall().resolves(to);
+        pickCheckin.onThirdCall().resolves(to);
+        const executeCommand = this.ctx.sandbox
+            .stub(vscode.commands, 'executeCommand')
+            .withArgs('vscode.changes')
+            .resolves();
+        const commandCenter = Object.create(
+            CommandCenter.prototype
+        ) as CommandCenter & {
+            compare(repository: Repository): Promise<void>;
+            timelineCompare(item: {
+                repository: Repository;
+                commit: Commit;
+            }): Promise<void>;
+        };
+
+        await commandCenter.compare(repository);
+
+        sinon.assert.calledOnceWithExactly(diff, from, to);
+        assert.deepEqual(
+            executeCommand.firstCall.args[2].map((change: vscode.Uri[]) =>
+                change.map(uri => uri.toString())
+            ),
+            [
+                [
+                    vscode.Uri.joinPath(root, 'added.txt').toString(),
+                    toZitEmptyUri(
+                        vscode.Uri.joinPath(root, 'added.txt')
+                    ).toString(),
+                    toZitUri(
+                        vscode.Uri.joinPath(root, 'added.txt'),
+                        to
+                    ).toString(),
+                ],
+                [
+                    vscode.Uri.joinPath(root, 'mode.sh').toString(),
+                    toZitUri(
+                        vscode.Uri.joinPath(root, 'mode.sh'),
+                        from
+                    ).toString(),
+                    toZitUri(
+                        vscode.Uri.joinPath(root, 'mode.sh'),
+                        to
+                    ).toString(),
+                ],
+                [
+                    vscode.Uri.joinPath(root, 'deleted.txt').toString(),
+                    toZitUri(
+                        vscode.Uri.joinPath(root, 'deleted.txt'),
+                        from
+                    ).toString(),
+                    toZitEmptyUri(
+                        vscode.Uri.joinPath(root, 'deleted.txt')
+                    ).toString(),
+                ],
+            ]
+        );
+
+        const commit = {
+            hash: 'a'.repeat(64) as ZitHash,
+        } as Commit;
+        await commandCenter.timelineCompare({ repository, commit });
+        sinon.assert.calledWithExactly(diff, commit.hash, to);
+        sinon.assert.calledTwice(executeCommand);
     });
 }

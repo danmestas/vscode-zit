@@ -31,7 +31,7 @@ import {
     ZitCommitMessage,
     ResourceStatus,
 } from './openedRepository';
-import type { Commit, RelativePath } from './openedRepository';
+import type { Commit, FileStatus, RelativePath } from './openedRepository';
 import type { Model } from './model';
 import { ZitResource, CommitOptions, Repository } from './repository';
 import { ZitResourceGroup, isResourceGroup } from './resourceGroups';
@@ -42,7 +42,10 @@ import { partition } from './util';
 import { fromZitUri, toZitEmptyUri, toZitUri } from './uri';
 import { ZitAnnotator } from './praise';
 import type { DocumentFsPath, ZitExecutable } from './zitExecutable';
-import type { ZitTimelineProvider } from './timelineProvider';
+import type {
+    TimelineCommitItem,
+    ZitTimelineProvider,
+} from './timelineProvider';
 
 import { localize } from './main';
 import { exportGit } from './gitExport';
@@ -52,6 +55,7 @@ type CommandKey =
     | 'addAll'
     | 'branch'
     | 'branchChange'
+    | 'compare'
     | 'cherrypick'
     | 'clean'
     | 'clearRemote'
@@ -104,6 +108,7 @@ type CommandKey =
     | 'timelineOpen'
     | 'timelineProject'
     | 'timelineRefresh'
+    | 'timelineCompare'
     | 'update'
     | 'worktreeCreate'
     | 'worktreeOpen'
@@ -253,6 +258,47 @@ export class CommandCenter {
             default:
                 return resource.resourceUri;
         }
+    }
+
+    private getMultiDiffResource(resource: ZitResource): [Uri, Uri, Uri] {
+        return [
+            resource.resourceUri,
+            this.getLeftResource(resource) ?? toZitEmptyUri(resource.original),
+            this.getRightResource(resource) ?? toZitEmptyUri(resource.original),
+        ];
+    }
+
+    private getComparisonResource(
+        repository: Repository,
+        file: FileStatus,
+        from: ZitCheckin,
+        to: ZitCheckin
+    ): [Uri, Uri, Uri] {
+        const uri = Uri.file(path.join(repository.root, file.path));
+        const left =
+            file.status === ResourceStatus.ADDED
+                ? toZitEmptyUri(uri)
+                : toZitUri(uri, from);
+        const right =
+            file.status === ResourceStatus.DELETED
+                ? toZitEmptyUri(uri)
+                : toZitUri(uri, to);
+        return [uri, left, right];
+    }
+
+    private async openComparison(
+        repository: Repository,
+        from: ZitCheckin,
+        to: ZitCheckin
+    ): Promise<void> {
+        const files = await repository.diff(from, to);
+        await commands.executeCommand(
+            'vscode.changes',
+            localize('compare refs title', 'Zit Changes: {0} ↔ {1}', from, to),
+            files.map(file =>
+                this.getComparisonResource(repository, file, from, to)
+            )
+        );
     }
 
     private getTitle(resource: ZitResource): string {
@@ -431,19 +477,23 @@ export class CommandCenter {
     @command()
     async openChange(...resources: ZitResource[]): Promise<void> {
         if (resources.length === 1) {
-            // a resource group proxy object?
             const [resourceGroup] = resources;
             if (isResourceGroup(resourceGroup)) {
-                // const groupId = resourceGroup.id;
-                const resources = resourceGroup.resourceStates as ZitResource[];
-                return this.openChange(...resources);
+                return this.openChange(
+                    ...(resourceGroup.resourceStates as ZitResource[])
+                );
             }
+            return this._openResource(resourceGroup);
+        }
+        if (resources.length === 0) {
+            return;
         }
 
-        const preview = resources.length === 1 ? undefined : false;
-        for (const resource of resources) {
-            await this._openResource(resource, preview, true);
-        }
+        await commands.executeCommand<void>(
+            'vscode.changes',
+            localize('open changes title', 'Zit Changes'),
+            resources.map(resource => this.getMultiDiffResource(resource))
+        );
     }
 
     @command()
@@ -1284,6 +1334,30 @@ export class CommandCenter {
         await interaction.presentLogSourcesMenu(repository);
     }
 
+    @command(Inline.Repository)
+    async compare(repository: Repository): Promise<void> {
+        const refs = await repository.getBranchesAndTags();
+        const from = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'compare from',
+                'Select a check-in to compare from'
+            ),
+        });
+        if (!from) {
+            return;
+        }
+        const to = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'compare to',
+                'Select a check-in to compare to'
+            ),
+        });
+        if (!to) {
+            return;
+        }
+        await this.openComparison(repository, from, to);
+    }
+
     @command()
     async fileLog(uri?: Uri): Promise<void> {
         if (!uri) {
@@ -1344,6 +1418,21 @@ export class CommandCenter {
     @command()
     async timelineLoadMore(repository: Repository): Promise<void> {
         this.timeline.loadMore(repository);
+    }
+
+    @command()
+    async timelineCompare(item: TimelineCommitItem): Promise<void> {
+        const refs = await item.repository.getBranchesAndTags();
+        const to = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'timeline compare to',
+                'Select a check-in to compare with {0}',
+                item.commit.hash
+            ),
+        });
+        if (to) {
+            await this.openComparison(item.repository, item.commit.hash, to);
+        }
     }
 
     @command()

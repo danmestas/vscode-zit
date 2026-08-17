@@ -31,7 +31,7 @@ import {
     ZitClass,
 } from '../../openedRepository';
 import { Repository, RepositoryState, ZitResource } from '../../repository';
-import { toZitUri } from '../../uri';
+import { toZitEmptyUri, toZitUri } from '../../uri';
 import * as interaction from '../../interaction';
 
 async function documentWasShown(
@@ -463,30 +463,36 @@ export function resourceActionsSuite(this: Suite): void {
         sinon.assert.notCalled(otd);
         sinon.assert.notCalled(std);
     });
-    test('Open change uses non-preview diffs for multiple resources', async () => {
+    test('Open change uses one multi-diff for multiple resources', async () => {
         const repository = getRepository();
         const execStub = getExecStub(this.ctx.sandbox);
         fakeZitStatus(execStub, 'edited first.txt\nedited second.txt\n');
         await repository.updateStatus('Open multiple changes' as Reason);
         const resources = repository.workingGroup.resourceStates;
         assert.equal(resources.length, 2);
-        const diff = this.ctx.sandbox
+        const executeCommand = this.ctx.sandbox
             .stub(commands, 'executeCommand')
-            .callThrough()
-            .withArgs('vscode.diff')
-            .resolves();
+            .callThrough();
+        const diff = executeCommand.withArgs('vscode.diff').resolves();
+        const changes = executeCommand.withArgs('vscode.changes').resolves();
 
         try {
             await commands.executeCommand('zit.openChange', resources[0]);
             sinon.assert.calledOnce(diff);
             assert.equal(diff.firstCall.args[4].preview, undefined);
-            diff.resetHistory();
 
             await commands.executeCommand('zit.openChange', ...resources);
-            sinon.assert.calledTwice(diff);
-            for (const call of diff.getCalls()) {
-                assert.equal(call.args[4].preview, false);
-            }
+            sinon.assert.calledOnce(changes);
+            assert.deepEqual(
+                changes.firstCall.args[2].map((change: Uri[]) =>
+                    change.map(uri => uri.toString())
+                ),
+                resources.map(resource => [
+                    resource.resourceUri.toString(),
+                    toZitUri(resource.original).toString(),
+                    resource.resourceUri.toString(),
+                ])
+            );
         } finally {
             fakeZitStatus(execStub, '');
             await repository.updateStatus('Clear multiple changes' as Reason);
@@ -933,10 +939,10 @@ export function resourceActionsSuite(this: Suite): void {
         const execStub = getExecStub(this.ctx.sandbox);
         fakeZitStatus(execStub, 'edited first.txt\nmissing second.txt');
         await repository.updateStatus('Open group test' as Reason);
-        const diff = this.ctx.sandbox
+        const changes = this.ctx.sandbox
             .stub(commands, 'executeCommand')
             .callThrough()
-            .withArgs('vscode.diff')
+            .withArgs('vscode.changes')
             .resolves();
 
         await commands.executeCommand(
@@ -944,8 +950,25 @@ export function resourceActionsSuite(this: Suite): void {
             repository.workingGroup
         );
 
-        sinon.assert.calledTwice(diff);
-        assert.equal(diff.firstCall.args[4].preview, false);
+        sinon.assert.calledOnce(changes);
+        const resources = repository.workingGroup.resourceStates;
+        assert.deepEqual(
+            changes.firstCall.args[2].map((change: Uri[]) =>
+                change.map(uri => uri.toString())
+            ),
+            [
+                [
+                    resources[0].resourceUri.toString(),
+                    toZitUri(resources[0].original).toString(),
+                    resources[0].resourceUri.toString(),
+                ],
+                [
+                    resources[1].resourceUri.toString(),
+                    toZitUri(resources[1].original).toString(),
+                    toZitEmptyUri(resources[1].original).toString(),
+                ],
+            ]
+        );
         await commands.executeCommand(
             'zit.openFileFromUri',
             Uri.file('/tmp/not-in-zit-repository.txt')

@@ -21,6 +21,7 @@ All notable changes to the Zit extension are documented here.
 - Changed **Clean** to move confirmed untracked files and directories to the operating-system Trash instead of permanently deleting them with `zit clean --force`.
 - Added **Show Remote**, **Set Remote**, and **Clear Remote** actions with replacement/removal confirmation and immediate status-bar and autosync updates.
 - Added symbolic-tag browsing across the repository or a selected check-in, plus confirmed tag cancellation and refreshed Source Control/timeline state.
+- Added arbitrary branch, symbolic-tag, and check-in comparison from the Command Palette, Source Control Timeline menu, and timeline check-in actions, with all changed files opened in one multi-diff editor.
 
 ### Removed
 

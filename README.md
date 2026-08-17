@@ -35,7 +35,7 @@ Use **Update** to move the checkout to another check-in, branch, or tag. Merge a
 
 ### History and inspection
 
-The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files.
+The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files. Use **Compare Refs...** from the Command Palette, the Source Control **Timeline** menu, or a timeline check-in's **Compare with...** action to compare any branch, symbolic tag, or check-in in one multi-diff editor.
 
 Run **Zit: Praise** from the Command Palette to show each committed line’s check-in, date, and author in the editor margin. Hover a line for the commit message and full metadata; run **Praise** again to hide the annotations.
 

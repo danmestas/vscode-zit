@@ -27,11 +27,11 @@ export type ZitTimelineItem =
     | TimelineLoadMoreItem
     | TimelineMessageItem;
 
-class TimelineCommitItem extends TreeItem {
+export class TimelineCommitItem extends TreeItem {
     constructor(
-        repository: Repository,
-        commit: Commit,
-        fileUri: Uri | undefined
+        readonly repository: Repository,
+        readonly commit: Commit,
+        readonly fileUri: Uri | undefined
     ) {
         super(commit.message);
         const hash = commit.hash.slice(0, SHORT_HASH_LENGTH);

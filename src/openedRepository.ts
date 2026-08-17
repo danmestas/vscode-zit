@@ -867,31 +867,9 @@ export class OpenedRepository {
         return this.parseArtifact(result.stdout);
     }
 
-    private async changedFiles(
-        checkin: ZitHash,
-        artifact: ArtifactDetails
-    ): Promise<FileStatus[]> {
-        const parent = artifact.parents[0];
-        if (!parent) {
-            return artifact.files
-                .filter(file => file.hash !== undefined)
-                .map(file => ({
-                    klass: 'ADDED',
-                    status: ResourceStatus.ADDED,
-                    path: file.path,
-                }));
-        }
-
-        const result = await this.exec([
-            'diff',
-            '--brief',
-            '--from',
-            parent,
-            '--to',
-            checkin,
-        ]);
+    private parseDiffRecords(output: string): FileStatus[] {
         const changed: FileStatus[] = [];
-        for (const line of result.stdout.split('\n')) {
+        for (const line of output.split('\n')) {
             const match = line.match(/^([AMD])(?:\t| +)(.+)$/);
             if (!match) {
                 continue;
@@ -912,6 +890,38 @@ export class OpenedRepository {
             });
         }
         return changed;
+    }
+
+    async diff(from: ZitCheckin, to: ZitCheckin): Promise<FileStatus[]> {
+        const result = await this.exec([
+            'diff',
+            '--brief',
+            '--from',
+            from,
+            '--to',
+            to,
+        ]);
+        if (result.exitCode) {
+            throw new Error(result.stderr.trim() || 'zit diff failed');
+        }
+        return this.parseDiffRecords(result.stdout);
+    }
+
+    private async changedFiles(
+        checkin: ZitHash,
+        artifact: ArtifactDetails
+    ): Promise<FileStatus[]> {
+        const parent = artifact.parents[0];
+        if (!parent) {
+            return artifact.files
+                .filter(file => file.hash !== undefined)
+                .map(file => ({
+                    klass: 'ADDED',
+                    status: ResourceStatus.ADDED,
+                    path: file.path,
+                }));
+        }
+        return this.diff(parent, checkin);
     }
 
     private async enrichCommit(

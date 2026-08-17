@@ -12,16 +12,16 @@
 
 ## Delivery order
 
-Item 1 is complete. Items 6 and 7 are the current serial implementation wave. The remaining items stay independently implementable and issue-ready.
+Items 1, 3, 4, 6, 7, and 8 are complete. Items 2 and 5 are deliberately blocked because their required VS Code APIs remain proposed in VS Code 1.125; this extension stays on stable APIs so packaged VSIX builds remain installable without `--enable-proposed-api`.
 
 - [x] 1. Safe Trash-based untracked discard — **complete**
-- [ ] 2. Native Source Control action button — **tracked**
-- [ ] 3. Multi-diff Open All Changes — **tracked**
-- [ ] 4. Compare refs and check-ins — **tracked**
-- [ ] 5. Native SCM history graph — **tracked**
-- [ ] 6. Default remote management — **in progress**
-- [ ] 7. Zit worktree awareness — **queued after item 6**
-- [ ] 8. Complete tag management — **tracked**
+- [ ] 2. Native Source Control action button — **blocked on stable VS Code API**
+- [x] 3. Multi-diff Open All Changes — **complete**
+- [x] 4. Compare refs and check-ins — **complete**
+- [ ] 5. Native SCM history graph — **blocked on stable VS Code API**
+- [x] 6. Default remote management — **complete**
+- [x] 7. Zit worktree awareness — **complete**
+- [x] 8. Complete tag management — **complete**
 
 ## 1. Safe Trash-based untracked discard
 
@@ -52,10 +52,10 @@ Item 1 is complete. Items 6 and 7 are the current serial implementation wave. Th
 
 **Acceptance criteria:**
 
-- [ ] Open All Changes produces one multi-diff editor.
-- [ ] Added, edited, deleted, missing, and executable-bit changes resolve to correct left and right resources.
-- [ ] Single-resource Open Change behavior remains unchanged.
-- [ ] Empty groups do not open an editor.
+- [x] Open All Changes produces one multi-diff editor.
+- [x] Added, edited, deleted, missing, and executable-bit changes resolve to correct left and right resources.
+- [x] Single-resource Open Change behavior remains unchanged.
+- [x] Empty groups do not open an editor.
 
 ## 4. Compare refs and check-ins
 
@@ -63,10 +63,10 @@ Item 1 is complete. Items 6 and 7 are the current serial implementation wave. Th
 
 **Acceptance criteria:**
 
-- [ ] Users can select one ref and compare it with another.
-- [ ] The result opens as a bounded multi-diff view.
-- [ ] Added, modified, deleted, binary, and executable-bit changes are represented correctly.
-- [ ] Ambiguous and missing check-in names surface Zit’s actionable diagnostic.
+- [x] Users can select one ref and compare it with another.
+- [x] The result opens as a bounded multi-diff view.
+- [x] Added, modified, deleted, binary, and executable-bit changes are represented correctly.
+- [x] Ambiguous and missing check-in names surface Zit’s actionable diagnostic.
 
 ## 5. Native SCM history graph
 
