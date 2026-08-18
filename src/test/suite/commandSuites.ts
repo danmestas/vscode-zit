@@ -4,14 +4,13 @@ import * as sinon from 'sinon';
 import {
     add,
     assertGroups,
-    cleanupFossil,
+    cleanupZit,
     fakeExecutionResult,
-    fakeFossilBranch,
-    fakeFossilChanges,
-    fakeFossilStatus,
+    fakeZitStatus,
     fakeRawExecutionResult,
     fakeStatusResult,
     getExecStub,
+    getOpenedRepository,
     getRawExecStub,
     getRepository,
     statusBarCommands,
@@ -19,36 +18,39 @@ import {
 import * as assert from 'assert/strict';
 import * as fs from 'fs/promises';
 import {
-    FossilBranch,
-    FossilCheckin,
-    FossilCommitMessage,
-    FossilTag,
+    Commit,
+    CommitDetails,
+    ZitBranch,
+    ZitCommitMessage,
+    ZitCheckin,
+    ZitClass,
+    ZitHash,
+    ZitUsername,
     OpenedRepository,
+    ZitURI,
     RelativePath,
     ResourceStatus,
+    StatusString,
 } from '../../openedRepository';
-import { Suite, Func, Test } from 'mocha';
-import { toFossilUri } from '../../uri';
-import { Reason } from '../../fossilExecutable';
+import { CommandCenter } from '../../commands';
+import * as interaction from '../../interaction';
+import { Suite } from 'mocha';
+import { toZitEmptyUri, toZitUri } from '../../uri';
+import { ZitFileSystemProvider } from '../../fileSystemProvider';
+import type {
+    Model,
+    ModelChangeEvent,
+    OriginalResourceChangeEvent,
+} from '../../model';
+import { delay } from '../../util';
+import { Reason } from '../../zitExecutable';
 
 declare module 'mocha' {
-    interface TestFunction {
-        if: (condition: boolean, title: string, fn: Func) => Test;
-    }
     interface Context {
         sandbox: sinon.SinonSandbox;
         workspaceUri: vscode.Uri;
     }
 }
-
-test.if = function (condition: boolean, title: string, fn: Func): Test {
-    if (condition) {
-        return this(title, fn);
-        /* c8 ignore next 3 */
-    } else {
-        return this.skip(title);
-    }
-};
 
 export function StatusSuite(this: Suite): void {
     test('Missing is visible in Source Control panel', async () => {
@@ -56,7 +58,7 @@ export function StatusSuite(this: Suite): void {
         const path = await add(
             'smiviscp.txt',
             'test\n',
-            `ADDED  ${filename}\n`
+            `added  ${filename}\n`
         );
         await fs.unlink(path.fsPath);
         const repository = getRepository();
@@ -64,11 +66,12 @@ export function StatusSuite(this: Suite): void {
         assertGroups(repository, {
             working: [[path.fsPath, ResourceStatus.MISSING]],
         });
+        await cleanupZit(repository);
     }).timeout(5000);
 
     test('Rename is visible in Source Control panel', async () => {
         const repository = getRepository();
-        await cleanupFossil(repository);
+        await cleanupZit(repository);
         const oldFilename = 'sriciscp-new.txt' as RelativePath;
         const newFilename = 'sriciscp-renamed.txt' as RelativePath;
         const oldUri = await add(oldFilename, 'test\n', `add ${oldFilename}`);
@@ -78,434 +81,561 @@ export function StatusSuite(this: Suite): void {
         const openedRepository: OpenedRepository = (repository as any)
             .repository;
 
-        await openedRepository.exec(['mv', oldFilename, newFilename, '--hard']);
+        await openedRepository.exec(['mv', oldFilename, newFilename]);
         await repository.updateStatus('Test' as Reason);
-        const barPath = Uri.joinPath(oldUri, '..', newFilename).fsPath;
+        const newPath = Uri.joinPath(oldUri, '..', newFilename).fsPath;
         assertGroups(repository, {
-            working: [[barPath, ResourceStatus.RENAMED]],
+            added: [[newPath, ResourceStatus.ADDED]],
+            working: [[oldUri.fsPath, ResourceStatus.DELETED]],
         });
+        await openedRepository.exec(['mv', newFilename, oldFilename]);
+        await repository.updateStatus('Test cleanup' as Reason);
+        assertGroups(repository, {});
     }).timeout(15000);
 
-    test('Merge is visible in Source Control panel', async () => {
+    test('Pending merge is visible in Source Control panel', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(
+            execStub,
+            'added bar-xa.txt\nedited foo-xa.txt\npending merge with ' +
+                'a'.repeat(64)
+        );
         const repository = getRepository();
-        await cleanupFossil(repository);
-        const openedRepository: OpenedRepository = (repository as any)
-            .repository;
 
-        const fooPath = (await add('foo-xa.txt', '', 'add: foo-xa.txt')).fsPath;
-
-        const barPath = Uri.joinPath(
-            this.ctx.workspaceUri,
-            'bar-xa.txt'
-        ).fsPath;
-        await fs.writeFile(barPath, 'test bar\n');
-        await fs.appendFile(fooPath, 'appended\n');
-        await openedRepository.exec([
-            'add',
-            '--',
-            'bar-xa.txt' as RelativePath,
-        ]);
-        await openedRepository.exec([
-            'commit',
-            '-m',
-            'add: bar-xa.txt, mod foo-xa.txt' as FossilCommitMessage,
-            '--branch',
-            'test_brunch' as FossilBranch,
-            '--no-warnings',
-        ]);
-
-        await openedRepository.exec(['update', 'trunk' as FossilBranch]);
-        await openedRepository.exec(['merge', 'test_brunch' as FossilCheckin]);
         await repository.updateStatus('Test' as Reason);
+
+        assert.equal(repository.zitStatus?.isMerge, true);
         assertGroups(repository, {
+            added: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'bar-xa.txt').fsPath,
+                    ResourceStatus.ADDED,
+                ],
+            ],
             working: [
-                [barPath, ResourceStatus.ADDED],
-                [fooPath, ResourceStatus.MODIFIED],
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'foo-xa.txt').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
             ],
         });
-    }).timeout(10000);
+    });
 
-    test.if(process.platform != 'win32', 'Meta', async () => {
-        const uri = this.ctx.workspaceUri;
-
-        // enable symlinks
+    test('Metadata and type changes use Zit status classes', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(
+            execStub,
+            'edited executable\nedited status_unexec\nmissing not_file'
+        );
         const repository = getRepository();
-        const openedRepository: OpenedRepository = (repository as any)
-            .repository;
-        await openedRepository.exec(['settings', 'allow-symlinks', 'on']);
-
-        await cleanupFossil(repository);
-
-        // EXECUTABLE
-        const executable_path = Uri.joinPath(uri, 'executable').fsPath;
-        await fs.writeFile(executable_path, 'executable_path');
-        await openedRepository.exec([
-            'add',
-            '--',
-            executable_path as RelativePath,
-        ]);
-        await openedRepository.exec([
-            'commit',
-            '-m',
-            'added executable' as FossilCommitMessage,
-            '--',
-            executable_path as RelativePath,
-        ]);
-        await fs.chmod(executable_path, 0o744);
-
-        // UNEXEC
-        const unexec_path = Uri.joinPath(uri, 'status_unexec').fsPath;
-        await fs.writeFile(unexec_path, 'unexec_path');
-        await fs.chmod(unexec_path, 0o744);
-        await openedRepository.exec(['add', '--', unexec_path as RelativePath]);
-        await openedRepository.exec([
-            'commit',
-            '-m',
-            'added status_unexec' as FossilCommitMessage,
-            '--',
-            unexec_path as RelativePath,
-        ]);
-        await fs.chmod(unexec_path, 0o644);
-
-        // SYMLINK
-        const symlink_path = Uri.joinPath(uri, 'symlink').fsPath;
-        await fs.writeFile(symlink_path, 'symlink_path');
-        await openedRepository.exec([
-            'add',
-            '--',
-            symlink_path as RelativePath,
-        ]);
-        await openedRepository.exec([
-            'commit',
-            '-m',
-            'added symlink' as FossilCommitMessage,
-            '--',
-            symlink_path as RelativePath,
-        ]);
-        await fs.unlink(symlink_path);
-        await fs.symlink('/etc/passwd', symlink_path);
-
-        // UNLINK
-        const unlink_path = Uri.joinPath(uri, 'unlink').fsPath;
-        await fs.symlink('/etc/passwd', unlink_path);
-        await openedRepository.exec(['add', '--', unlink_path as RelativePath]);
-        await openedRepository.exec([
-            'commit',
-            '-m',
-            'added unlink' as FossilCommitMessage,
-            '--',
-            unlink_path as RelativePath,
-        ]);
-        await fs.rm(unlink_path);
-        // make unlink_path a regular file
-        await fs.writeFile(unlink_path, '/etc/passwd');
-
-        // NOT A FILE
-        const not_file_path = (
-            await add('not_file', 'not_file_path', 'added not_file')
-        ).fsPath;
-        await fs.unlink(not_file_path);
-        await fs.mkdir(not_file_path);
 
         await repository.updateStatus('Test' as Reason);
+
         assertGroups(repository, {
             working: [
-                [executable_path, ResourceStatus.MODIFIED],
-                [unexec_path, ResourceStatus.MODIFIED],
-                [symlink_path, ResourceStatus.MODIFIED],
-                [unlink_path, ResourceStatus.MODIFIED],
-                [not_file_path, ResourceStatus.MISSING],
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'executable').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'status_unexec').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'not_file').fsPath,
+                    ResourceStatus.MISSING,
+                ],
             ],
         });
-        await fs.rmdir(not_file_path);
-    }).timeout(20000);
+    });
 
-    const testRename = async (
-        status: `${'RENAMED' | 'EDITED'} ${'a' | 'a.txt  ->  b'}.txt`,
-        before: 'a.txt',
-        after: 'a.txt' | 'b.txt',
-        resourceStatus: ResourceStatus
-    ) => {
-        const repository = getRepository();
+    test('decodes brief-diff paths before status deduplication', () => {
+        const parsed = getOpenedRepository().parseStatusString(
+            (`On branch trunk (check-in ${'0'.repeat(64)})\n` +
+                'edited spaced name.txt\n' +
+                'edited folder/file.txt') as StatusString,
+            '',
+            'M spaced\\sname.txt\nM folder\\\\file.txt'
+        );
+
+        assert.deepEqual(
+            parsed.statuses.map(file => [file.status, file.path]),
+            [
+                [ResourceStatus.MODIFIED, 'spaced name.txt'],
+                [ResourceStatus.MODIFIED, 'folder/file.txt'],
+            ]
+        );
+    });
+
+    test('"Refresh" command refreshes all status surfaces', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-        fakeFossilStatus(execStub, status);
-        await repository.updateStatus('Test' as Reason);
-        const uriBefore = Uri.joinPath(this.ctx.workspaceUri, before);
-        const uriAfter = Uri.joinPath(this.ctx.workspaceUri, after);
-        assertGroups(repository, {
-            working: [[uriAfter.fsPath, resourceStatus]],
-        });
-        const resource = repository.workingGroup.resourceStates[0];
-        assert.equal(resource.original.toString(), uriBefore.toString());
-        assert.ok(resource.renameResourceUri);
-        assert.equal(
-            resource.renameResourceUri.toString(),
-            uriAfter.toString()
+        const status = fakeZitStatus(
+            execStub,
+            'added new.txt\nedited changed.txt\nmissing deleted.txt\n' +
+                'extra refresh.txt',
+            'A new.txt\nM changed.txt\nD deleted.txt'
         );
-    };
 
-    test('Renamed (pre 2.19)', async () => {
-        await testRename(
-            'RENAMED a.txt',
-            'a.txt',
-            'a.txt',
-            ResourceStatus.RENAMED
-        );
-    });
+        await commands.executeCommand('zit.refresh');
 
-    test('Renamed (since 2.19)', async () => {
-        await testRename(
-            'RENAMED a.txt  ->  b.txt',
-            'a.txt',
-            'b.txt',
-            ResourceStatus.RENAMED
-        );
-    });
-
-    test('Renamed (since 2.23)', async () => {
-        await testRename(
-            'EDITED a.txt  ->  b.txt',
-            'a.txt',
-            'b.txt',
-            ResourceStatus.MODIFIED
-        );
-    });
-
-    test('"Refresh" command refreshes everything', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const status = fakeFossilStatus(execStub, 'EXTRA refresh.txt\n');
-        const branch = fakeFossilBranch(execStub, 'refresh');
-        const changes = fakeFossilChanges(execStub, '12 files modified.');
-        await commands.executeCommand('fossil.refresh');
         sinon.assert.calledThrice(execStub);
         sinon.assert.calledOnce(status);
-        sinon.assert.calledOnce(branch);
-        sinon.assert.calledOnce(changes);
+        const repository = getRepository();
+        assert.equal(repository.zitStatus?.branch, 'trunk');
+        assert.equal(repository.zitStatus?.checkin, '0'.repeat(64));
+        assert.equal(repository.zitStatus?.isMerge, false);
+        assertGroups(repository, {
+            added: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'new.txt').fsPath,
+                    ResourceStatus.ADDED,
+                ],
+            ],
+            working: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'changed.txt').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'deleted.txt').fsPath,
+                    ResourceStatus.MISSING,
+                ],
+            ],
+            untracked: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'refresh.txt').fsPath,
+                    ResourceStatus.EXTRA,
+                ],
+            ],
+        });
 
-        // reset everything, not leaving 'refresh' as current branch
-        branch.resolves(fakeExecutionResult({ stdout: 'trunk' }));
-        changes.resolves(
-            fakeExecutionResult({ stdout: 'changes: None. Already up-to-date' })
-        );
         status.resolves(fakeStatusResult(''));
-        await commands.executeCommand('fossil.refresh');
+        execStub
+            .withArgs(['extras'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        execStub
+            .withArgs(['diff', '--brief'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        await commands.executeCommand('zit.refresh');
         assertGroups(getRepository(), {});
     });
 
-    test('Branch change is reflected in status bar', async () => {
-        // 1. Check current branch name
-        const branchCommandBefore = statusBarCommands()[0];
-        assert.equal(branchCommandBefore.title, '$(git-branch) trunk');
+    test('Rejects status output without a branch header', () => {
+        assert.throws(
+            () => getOpenedRepository().parseStatusString('' as StatusString),
+            /missing branch/
+        );
+    });
 
-        // 2. Create branch
-        const branchName = 'statusbar1' as FossilBranch;
-        const cib = this.ctx.sandbox.stub(window, 'createInputBox');
-        cib.onFirstCall().callsFake(() => {
-            const inputBox: vscode.InputBox = cib.wrappedMethod();
-            const stub = sinon.stub(inputBox);
-            stub.show.callsFake(() => {
-                stub.value = branchName;
-                const onDidAccept = stub.onDidAccept.getCall(0).args[0];
-                onDidAccept();
-            });
-            return stub;
-        });
+    test('Repository selection uses direct matches and the model picker', async () => {
+        const repository = getRepository();
+        const getRepositoryForArg = this.ctx.sandbox.stub();
+        getRepositoryForArg.onFirstCall().returns(repository);
+        getRepositoryForArg.onSecondCall().returns(undefined);
+        const pickRepository = this.ctx.sandbox.stub().resolves(undefined);
+        const model = {
+            getRepository: getRepositoryForArg,
+            repositories: [repository, {}],
+            pickRepository,
+        } as unknown as Model;
+        const commandCenter = Object.assign(
+            Object.create(CommandCenter.prototype),
+            { model }
+        ) as CommandCenter;
+        const uri = Uri.file('/tmp/repository-selection.txt');
 
+        assert.equal(await commandCenter.guessRepository(uri), repository);
+        assert.equal(await commandCenter.guessRepository(uri), undefined);
+        sinon.assert.calledOnce(pickRepository);
+    });
+
+    test('Status failures propagate through model updates', async () => {
+        const repository = getRepository();
         const execStub = getExecStub(this.ctx.sandbox);
-        fakeFossilStatus(execStub, '\n'); // ensure branch doesn't get '+'
-        const branchCreation = execStub.withArgs([
-            'branch',
-            'new',
+        const failure = fakeExecutionResult({
+            exitCode: 1,
+            stderr: 'zit status: repository unavailable\n',
+        });
+        execStub.withArgs(['status']).resolves(failure);
+        execStub
+            .withArgs(['extras'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        execStub
+            .withArgs(['diff', '--brief'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+
+        assert.equal(
+            await repository.updateStatus('Expected status failure' as Reason),
+            failure
+        );
+        await assert.rejects(
+            repository.updateModelState(
+                { status: true },
+                'Expected model failure' as Reason
+            ),
+            /repository unavailable/
+        );
+    });
+    test('Status failures fall back to spawn and generic diagnostics', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        const status = execStub.withArgs(['status']);
+        execStub
+            .withArgs(['extras'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        execStub
+            .withArgs(['diff', '--brief'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        const spawnFailure = Object.assign(
+            fakeExecutionResult({ exitCode: 1 }),
+            { spawnFailure: new Error('spawn unavailable') }
+        );
+        status.resolves(spawnFailure);
+
+        await assert.rejects(
+            repository.updateModelState(
+                { status: true },
+                'Spawn model failure' as Reason
+            ),
+            /spawn unavailable/
+        );
+
+        status.resolves(fakeExecutionResult({ exitCode: 1 }));
+        await assert.rejects(
+            repository.updateModelState(
+                { status: true },
+                'Generic model failure' as Reason
+            ),
+            /zit status failed/
+        );
+    });
+
+    test('Refresh accepts an explicitly supplied repository', async () => {
+        const repository = getRepository();
+        const refresh = this.ctx.sandbox.stub(repository, 'refresh').resolves();
+
+        await commands.executeCommand('zit.refresh', repository);
+
+        sinon.assert.calledOnce(refresh);
+    });
+
+    test('Branch change is reflected in status bar', async () => {
+        const repository = getRepository();
+        const branchName = 'statusbar1' as ZitBranch;
+        const commitMessage = 'Create statusbar1 branch' as ZitCommitMessage;
+        const execStub = getExecStub(this.ctx.sandbox);
+        const status = execStub
+            .withArgs(['status'])
+            .resolves(fakeStatusResult(''));
+        status
+            .onFirstCall()
+            .resolves(fakeStatusResult('edited branch-status.txt'));
+        status.onSecondCall().resolves(
+            fakeExecutionResult({
+                stdout:
+                    `On branch ${branchName} (check-in ${'a'.repeat(64)})\n` +
+                    'nothing to report\n',
+            })
+        );
+        const diff = execStub
+            .withArgs(['diff', '--brief'])
+            .resolves(fakeExecutionResult());
+        diff.onFirstCall().resolves(
+            fakeExecutionResult({ stdout: 'M branch-status.txt\n' })
+        );
+        execStub.withArgs(['extras']).resolves(fakeExecutionResult());
+        await repository.updateStatus('Test: branch command setup' as Reason);
+
+        assert.equal(statusBarCommands()[0].title, '$(git-branch) trunk+');
+
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves(branchName);
+        repository.sourceControl.inputBox.value = commitMessage;
+        const branchCreation = execStub
+            .withArgs(['commit', '--branch', branchName, '-m', commitMessage])
+            .resolves(fakeExecutionResult());
+
+        await commands.executeCommand('zit.branch');
+
+        sinon.assert.calledOnceWithExactly(branchCreation, [
+            'commit',
+            '--branch',
             branchName,
-            'current',
+            '-m',
+            commitMessage,
         ]);
-        await commands.executeCommand('fossil.branch');
-        sinon.assert.calledOnce(branchCreation);
+        assert.equal(
+            statusBarCommands()[0].title,
+            `$(git-branch) ${branchName}`
+        );
 
-        // 3. Change the branch
-        const branchSwitch = execStub.withArgs(['update', branchName]);
-        const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
-        sqp.onFirstCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            const item = items.find(
-                item => item.label == `$(git-branch) ${branchName}`
-            );
-            assert.ok(item);
-            assert.equal(item.description, '');
-            assert.equal(item.detail, undefined);
-            return Promise.resolve(item);
-        });
-        await commands.executeCommand('fossil.branchChange');
-        sinon.assert.calledOnce(sqp);
-        sinon.assert.calledOnce(branchSwitch);
+        const branchSwitch = execStub
+            .withArgs(['update', 'trunk' as ZitBranch])
+            .resolves(fakeExecutionResult());
 
-        // 4. Check branch name is changed
-        const branchCommandAfter = statusBarCommands()[0];
-        assert.equal(branchCommandAfter.title, `$(git-branch) ${branchName}`);
-
-        // 5. Change branch back to 'trunk'
-        sqp.onSecondCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            const item = items.find(
-                item => item.label == '$(git-branch) trunk'
-            );
-            assert.ok(item);
-            assert.equal(item.label, `$(git-branch) trunk`);
-            assert.equal(item.description, '');
-            assert.equal(item.detail, undefined);
-            return Promise.resolve(item);
-        });
-        await commands.executeCommand('fossil.branchChange');
-        sinon.assert.calledTwice(sqp);
-        const branchCommandLast = statusBarCommands()[0];
-        assert.equal(branchCommandLast.title, `$(git-branch) trunk`);
+        await getOpenedRepository().update('trunk' as ZitBranch);
+        await repository.updateStatus('Test: switched to trunk' as Reason);
+        sinon.assert.calledOnceWithExactly(
+            branchSwitch,
+            ['update', 'trunk' as ZitBranch],
+            undefined
+        );
+        assert.equal(statusBarCommands()[0].title, '$(git-branch) trunk');
+        repository.sourceControl.inputBox.value = '';
     }).timeout(20000);
 }
 
-export function TagSuite(this: Suite): void {
-    function selectTrunk(
-        items:
-            | readonly vscode.QuickPickItem[]
-            | Thenable<readonly vscode.QuickPickItem[]>
-    ) {
-        assert.ok(items instanceof Array);
-        const trunk = items.find(item => item.label === '$(git-branch) trunk');
-        assert.ok(trunk);
-        return Promise.resolve(trunk);
-    }
+export function CleanSuite(this: Suite): void {
+    test('Clean moves previewed untracked resources to Trash', async () => {
+        const repository = getRepository();
+        const filePath = '.zit-trash-test-file' as RelativePath;
+        const folderPath = '.zit-trash-test-folder' as RelativePath;
+        const fileUri = repository.toUri(filePath);
+        const folderUri = repository.toUri(folderPath);
+        await workspace.fs.writeFile(fileUri, new Uint8Array([1]));
+        await workspace.fs.createDirectory(folderUri);
+        const execStub = getExecStub(this.ctx.sandbox);
+        const preview = execStub.withArgs(['clean', '--dry-run']).resolves(
+            fakeExecutionResult({
+                stdout: `${filePath}\n${folderPath}\n`,
+            })
+        );
+        const force = execStub.withArgs(['clean', '--force']);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves('&&Move to Trash');
 
-    test('Close branch', async () => {
-        const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
-        sqp.onFirstCall().callsFake(selectTrunk);
-        const tagCallStub = getExecStub(this.ctx.sandbox).withArgs(
-            sinon.match.array.startsWith(['tag'])
+        await commands.executeCommand('zit.clean');
+
+        sinon.assert.calledOnceWithExactly(preview, ['clean', '--dry-run']);
+        sinon.assert.calledOnceWithExactly(
+            warning,
+            'Move 2 untracked resources to the Trash?',
+            { modal: true },
+            '&&Move to Trash'
         );
-        await commands.executeCommand('fossil.closeBranch');
-        sinon.assert.calledOnceWithExactly(tagCallStub, [
-            'tag',
-            'add',
-            '--raw',
-            'closed' as FossilTag,
-            'trunk' as FossilBranch,
-        ]);
+        await assert.rejects(Promise.resolve(workspace.fs.stat(fileUri)));
+        await assert.rejects(Promise.resolve(workspace.fs.stat(folderUri)));
+        sinon.assert.notCalled(force);
     });
-    test('Reopen branch', async () => {
-        const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
-        sqp.onFirstCall().callsFake(selectTrunk);
-        const tagCallStub = getExecStub(this.ctx.sandbox).withArgs(
-            sinon.match.array.startsWith(['tag'])
+
+    test('Canceling clean leaves untracked files untouched', async () => {
+        const repository = getRepository();
+        const filePath = '.zit-trash-cancel-test' as RelativePath;
+        const fileUri = repository.toUri(filePath);
+        await workspace.fs.writeFile(fileUri, new Uint8Array([1]));
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['clean', '--dry-run'])
+            .resolves(fakeExecutionResult({ stdout: `${filePath}\n` }));
+        const force = execStub.withArgs(['clean', '--force']);
+        this.ctx.sandbox.stub(window, 'showWarningMessage').resolves(undefined);
+
+        await commands.executeCommand('zit.clean');
+
+        await workspace.fs.stat(fileUri);
+        sinon.assert.notCalled(force);
+    });
+
+    test('Clean stops when preview fails', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        const preview = execStub.withArgs(['clean', '--dry-run']).resolves(
+            fakeExecutionResult({
+                exitCode: 1,
+                stderr: 'zit clean: preview failed\n',
+            })
         );
-        await commands.executeCommand('fossil.reopenBranch');
-        sinon.assert.calledOnceWithExactly(tagCallStub, [
-            'tag',
-            'cancel',
-            '--raw',
-            'closed' as FossilTag,
-            'trunk' as FossilBranch,
-        ]);
+        const force = execStub.withArgs(['clean', '--force']);
+        const warning = this.ctx.sandbox.stub(window, 'showWarningMessage');
+
+        await commands.executeCommand('zit.clean');
+
+        sinon.assert.calledOnce(preview);
+        sinon.assert.notCalled(warning);
+        sinon.assert.notCalled(force);
+    });
+
+    test('Clean does nothing when the preview is empty', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['clean', '--dry-run'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        const force = execStub.withArgs(['clean', '--force']);
+        const warning = this.ctx.sandbox.stub(window, 'showWarningMessage');
+
+        await commands.executeCommand('zit.clean');
+
+        sinon.assert.notCalled(warning);
+        sinon.assert.notCalled(force);
+    });
+
+    test('Clean surfaces Trash failures without permanent deletion', async () => {
+        const missingPath = '.zit-trash-missing-test' as RelativePath;
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['clean', '--dry-run'])
+            .resolves(fakeExecutionResult({ stdout: `${missingPath}\n` }));
+        const force = execStub.withArgs(['clean', '--force']);
+        (
+            this.ctx.sandbox.stub(
+                window,
+                'showWarningMessage'
+            ) as sinon.SinonStub
+        ).resolves('&&Move to Trash');
+
+        await assert.rejects(
+            Promise.resolve(commands.executeCommand('zit.clean'))
+        );
+
+        sinon.assert.notCalled(force);
     });
 }
 
-export function CleanSuite(this: Suite): void {
-    const rootUri = this.ctx.workspaceUri;
-
-    test('Clean', async () => {
-        const swm: sinon.SinonStub = this.ctx.sandbox.stub(
-            window,
-            'showWarningMessage'
-        );
-        swm.onFirstCall().resolves('&&Delete Extras');
-
-        const execStub = getExecStub(this.ctx.sandbox);
-        const cleanCallStub = execStub.withArgs(['clean']);
-        await commands.executeCommand('fossil.clean');
-        sinon.assert.calledOnce(cleanCallStub);
-        sinon.assert.calledOnceWithExactly(
-            swm,
-            'Are you sure you want to delete untracked and unignored files?',
-            { modal: true },
-            '&&Delete Extras'
-        );
-    }).timeout(5000);
-
-    test('Delete untracked files', async () => {
+export function RemoteSuite(this: Suite): void {
+    test('Show Remote reports the configured default remote', async () => {
         const repository = getRepository();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const cleanCallStub = execStub
-            .withArgs(sinon.match.array.startsWith(['clean']))
-            .resolves();
-        fakeFossilStatus(execStub, 'EXTRA a.txt\nEXTRA b.txt');
-        await repository.updateStatus('Test' as Reason);
-        assertGroups(repository, {
-            untracked: [
-                [Uri.joinPath(rootUri, 'a.txt').fsPath, ResourceStatus.EXTRA],
-                [Uri.joinPath(rootUri, 'b.txt').fsPath, ResourceStatus.EXTRA],
-            ],
-        });
-        const swm: sinon.SinonStub = this.ctx.sandbox.stub(
+        const remote = Uri.parse('https://example.test/repository') as ZitURI;
+        const getRemote = this.ctx.sandbox
+            .stub(repository, 'getRemote')
+            .resolves(remote);
+        const showInformationMessage = this.ctx.sandbox.stub(
             window,
-            'showWarningMessage'
-        );
-        swm.onFirstCall().resolves('&&Delete Files');
+            'showInformationMessage'
+        ) as sinon.SinonStub;
 
-        await commands.executeCommand(
-            'fossil.deleteFile',
-            ...repository.untrackedGroup.resourceStates
-        );
+        await commands.executeCommand('zit.showRemote');
+
+        sinon.assert.calledOnce(getRemote);
         sinon.assert.calledOnceWithExactly(
-            swm,
-            'Are you sure you want to DELETE 2 files?\nThis is IRREVERSIBLE!\nThese files will be FOREVER LOST if you proceed.',
-            { modal: true },
-            '&&Delete Files'
+            showInformationMessage,
+            `Default remote: ${remote.toString()}`
         );
-        sinon.assert.calledOnceWithMatch(cleanCallStub, [
-            'clean',
-            ...repository.untrackedGroup.resourceStates.map(
-                r => r.resourceUri.fsPath
-            ),
-        ]);
-    }).timeout(5000);
+    });
 
-    test('Delete All Untracked Files', async () => {
+    test('Show Remote reports when no default is configured', async () => {
         const repository = getRepository();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const cleanCallStub = execStub
-            .withArgs(sinon.match.array.startsWith(['clean']))
-            .resolves();
-        fakeFossilStatus(execStub, 'EXTRA a.txt\nEXTRA b.txt\nEXTRA c.txt');
-        await repository.updateStatus('Test' as Reason);
-        assertGroups(repository, {
-            untracked: [
-                [Uri.joinPath(rootUri, 'a.txt').fsPath, ResourceStatus.EXTRA],
-                [Uri.joinPath(rootUri, 'b.txt').fsPath, ResourceStatus.EXTRA],
-                [Uri.joinPath(rootUri, 'c.txt').fsPath, ResourceStatus.EXTRA],
-            ],
-        });
-        const showWarningMessage: sinon.SinonStub = this.ctx.sandbox.stub(
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(undefined);
+        const showInformationMessage = this.ctx.sandbox.stub(
+            window,
+            'showInformationMessage'
+        ) as sinon.SinonStub;
+
+        await commands.executeCommand('zit.showRemote');
+
+        sinon.assert.calledOnceWithExactly(
+            showInformationMessage,
+            'No default remote is configured.'
+        );
+    });
+
+    test('Set Remote prompts with and replaces the current default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        const replacement = Uri.parse(
+            'https://example.test/replacement'
+        ) as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        const inputRemoteUrl = this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(replacement);
+        const warning = this.ctx.sandbox.stub(
             window,
             'showWarningMessage'
-        );
-        showWarningMessage.onFirstCall().resolves('&&Delete Files');
+        ) as sinon.SinonStub;
+        warning.resolves('&&Replace Remote');
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
 
-        await commands.executeCommand(
-            'fossil.deleteFiles',
-            repository.untrackedGroup
-        );
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.calledOnceWithExactly(inputRemoteUrl, current);
         sinon.assert.calledOnceWithExactly(
-            showWarningMessage,
-            'Are you sure you want to DELETE 3 files?\n' +
-                'This is IRREVERSIBLE!\n' +
-                'These files will be FOREVER LOST if you proceed.',
+            warning,
+            `Replace the default remote ${current.toString()} with ${replacement.toString()}?`,
             { modal: true },
-            '&&Delete Files'
+            '&&Replace Remote'
         );
-        sinon.assert.calledOnceWithMatch(cleanCallStub, [
-            'clean',
-            ...repository.untrackedGroup.resourceStates.map(
-                r => r.resourceUri.fsPath
-            ),
-        ]);
-    }).timeout(5000);
+        sinon.assert.calledOnceWithExactly(setRemote, replacement);
+    });
+
+    test('Declining Set Remote replacement preserves the default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        const replacement = Uri.parse(
+            'https://example.test/replacement'
+        ) as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(replacement);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves(undefined);
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.calledOnce(warning);
+        sinon.assert.notCalled(setRemote);
+    });
+
+    test('Canceling Set Remote preserves the current default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        this.ctx.sandbox
+            .stub(interaction, 'inputRemoteUrl')
+            .resolves(undefined);
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.setRemote');
+
+        sinon.assert.notCalled(setRemote);
+    });
+
+    test('Clear Remote confirms before removing the default', async () => {
+        const repository = getRepository();
+        const current = Uri.parse('https://example.test/current') as ZitURI;
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(current);
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves('&&Clear Remote');
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.clearRemote');
+
+        sinon.assert.calledOnceWithExactly(
+            warning,
+            `Clear the default remote ${current.toString()}?`,
+            { modal: true },
+            '&&Clear Remote'
+        );
+        sinon.assert.calledOnceWithExactly(setRemote, undefined);
+    });
+
+    test('Clear Remote is a no-op when no default is configured', async () => {
+        const repository = getRepository();
+        this.ctx.sandbox.stub(repository, 'getRemote').resolves(undefined);
+        const warning = this.ctx.sandbox.stub(window, 'showWarningMessage');
+        const showInformationMessage = this.ctx.sandbox.stub(
+            window,
+            'showInformationMessage'
+        ) as sinon.SinonStub;
+        const setRemote = this.ctx.sandbox.stub(repository, 'setRemote');
+
+        await commands.executeCommand('zit.clearRemote');
+
+        sinon.assert.notCalled(warning);
+        sinon.assert.notCalled(setRemote);
+        sinon.assert.calledOnceWithExactly(
+            showInformationMessage,
+            'No default remote is configured.'
+        );
+    });
 }
 
 export function FileSystemSuite(this: Suite): void {
@@ -513,39 +643,262 @@ export function FileSystemSuite(this: Suite): void {
         const cat = getRawExecStub(this.ctx.sandbox)
             .withArgs(sinon.match.array.startsWith(['cat']))
             .resolves(fakeRawExecutionResult({ stdout: 'document text\n' }));
+        const checkin = 'a'.repeat(64) as ZitCheckin;
         const uri = Uri.joinPath(this.ctx.workspaceUri, 'test.txt');
-        const fossilUri = toFossilUri(uri);
-        const document = await workspace.openTextDocument(fossilUri);
+        const zitUri = toZitUri(uri, checkin);
+        const document = await workspace.openTextDocument(zitUri);
         sinon.assert.calledOnceWithExactly(
             cat,
-            [
-                'cat',
-                '-r',
-                'current' as FossilCheckin,
-                '--',
-                'test.txt' as RelativePath,
-            ],
+            ['cat', 'test.txt' as RelativePath, checkin],
             { cwd: sinon.match.string }
         );
         assert.equal(document.getText(), 'document text\n');
+        const empty = await workspace.openTextDocument(toZitEmptyUri(uri));
+        assert.equal(empty.getText(), '');
     });
+
+    test('emits and expires observable historical file changes', async () => {
+        const sandbox = this.ctx.sandbox;
+        const repositoryChanges = new vscode.EventEmitter<ModelChangeEvent>();
+        let focused = true;
+        const windowStateChanges =
+            new vscode.EventEmitter<vscode.WindowState>();
+        const windowState = sandbox
+            .stub(window, 'state')
+            .get(() => ({ active: true, focused }));
+        const onDidChangeWindowState = sandbox
+            .stub(window, 'onDidChangeWindowState')
+            .value(windowStateChanges.event);
+        const originalChanges =
+            new vscode.EventEmitter<OriginalResourceChangeEvent>();
+        const registration = { dispose: sandbox.stub() };
+        sandbox
+            .stub(workspace, 'registerFileSystemProvider')
+            .returns(registration);
+
+        const root = this.ctx.workspaceUri.fsPath;
+        const cat = sandbox.stub();
+        const repository = { root, cat };
+        const getRepository = sandbox
+            .stub()
+            .callsFake((uri: Uri) =>
+                uri.fsPath.startsWith(root) ? repository : undefined
+            );
+        const model = {
+            isInitialized: Promise.resolve(),
+            getRepository,
+            onDidChangeRepository: repositoryChanges.event,
+            onDidChangeOriginalResource: originalChanges.event,
+        } as unknown as Model;
+        const provider = new ZitFileSystemProvider(model);
+        const events: vscode.FileChangeEvent[] = [];
+        const listener = provider.onDidChangeFile(changes =>
+            events.push(...changes)
+        );
+        const source = Uri.joinPath(
+            this.ctx.workspaceUri,
+            'provider-cache.txt'
+        );
+        const checkin = 'b'.repeat(64) as ZitCheckin;
+        const historical = toZitUri(source, checkin);
+        await fs.writeFile(source.fsPath, 'working bytes');
+        await workspace.openTextDocument(source);
+
+        cat.onFirstCall().resolves(Buffer.from('historical bytes'));
+        assert.deepEqual(
+            await provider.readFile(historical),
+            new Uint8Array(Buffer.from('historical bytes'))
+        );
+        assert.equal(
+            (await provider.stat(historical)).type,
+            vscode.FileType.File
+        );
+        provider.watch().dispose();
+        assert.throws(() => provider.readDirectory());
+        assert.throws(() => provider.createDirectory());
+        assert.throws(() => provider.writeFile());
+        assert.throws(() => provider.delete());
+        assert.throws(() => provider.rename());
+
+        originalChanges.fire({
+            repository,
+            uri: Uri.parse('untitled:ignored'),
+        } as unknown as OriginalResourceChangeEvent);
+        assert.equal(events.length, 0);
+        originalChanges.fire({
+            repository,
+            uri: source,
+        } as unknown as OriginalResourceChangeEvent);
+        assert.equal(events.length, 1);
+        assert.equal(events[0].uri.scheme, 'zit');
+        events.length = 0;
+
+        repositoryChanges.fire({
+            repository,
+            uri: this.ctx.workspaceUri,
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.deepEqual(
+            events.map(event => event.uri.toString()),
+            [historical.toString()]
+        );
+        events.length = 0;
+        repositoryChanges.fire({
+            repository,
+            uri: source,
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.deepEqual(
+            events.map(event => event.uri.toString()),
+            [historical.toString()]
+        );
+        focused = false;
+        events.length = 0;
+        repositoryChanges.fire({
+            repository,
+            uri: this.ctx.workspaceUri,
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.equal(events.length, 0);
+        focused = true;
+        windowStateChanges.fire({ active: true, focused: true });
+        await delay(0);
+        assert.deepEqual(
+            events.map(event => event.uri.toString()),
+            [historical.toString()]
+        );
+
+        const outside = toZitUri(
+            Uri.file('/tmp/outside-zit-provider.txt'),
+            checkin
+        );
+        await assert.rejects(provider.stat(outside));
+        await assert.rejects(provider.readFile(outside));
+        const missing = toZitUri(
+            Uri.joinPath(this.ctx.workspaceUri, 'missing-history.txt'),
+            checkin
+        );
+        cat.onSecondCall().resolves(undefined);
+        await assert.rejects(provider.readFile(missing));
+
+        const internal = provider as unknown as {
+            cache: Map<string, { uri: Uri; timestamp: number }>;
+            cleanup(): void;
+        };
+        const fakeZitUri = (fsPath: string, key: string) =>
+            ({
+                fsPath,
+                path: fsPath,
+                scheme: 'zit',
+                query: JSON.stringify({ path: fsPath, checkin }),
+                toString: () => key,
+            }) as unknown as Uri;
+        const equal = fakeZitUri('/exact-root', 'equal');
+        internal.cache.set('equal', {
+            uri: equal,
+            timestamp: Date.now(),
+        });
+        events.length = 0;
+        repositoryChanges.fire({
+            repository: { root: '/exact-root' },
+            uri: Uri.file('/exact-root'),
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.equal(
+            events.some(event => event.uri === equal),
+            true
+        );
+        internal.cache.delete('equal');
+
+        const windows = fakeZitUri('c:\\repo/file.txt', 'windows');
+        internal.cache.set('windows', {
+            uri: windows,
+            timestamp: Date.now(),
+        });
+        events.length = 0;
+        repositoryChanges.fire({
+            repository: { root: 'C:\\REPO/' },
+            uri: Uri.file('/'),
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.equal(
+            events.some(event => event.uri === windows),
+            true
+        );
+        internal.cache.delete('windows');
+
+        const windowsOpen = fakeZitUri('C:\\Repo\\File.txt', 'windows-open');
+        internal.cache.set('windows-open', {
+            uri: windowsOpen,
+            timestamp: 0,
+        });
+        const textDocuments = sandbox.stub(workspace, 'textDocuments').value([
+            {
+                uri: {
+                    scheme: 'file',
+                    fsPath: 'c:\\repo\\file.txt',
+                },
+            } as vscode.TextDocument,
+        ]);
+        internal.cleanup();
+        assert.equal(internal.cache.has('windows-open'), true);
+        textDocuments.restore();
+        internal.cache.delete('windows-open');
+        internal.cleanup();
+        events.length = 0;
+        repositoryChanges.fire({
+            repository,
+            uri: this.ctx.workspaceUri,
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.deepEqual(
+            new Set(events.map(event => event.uri.toString())),
+            new Set([historical.toString(), missing.toString()])
+        );
+
+        for (const row of internal.cache.values()) {
+            row.timestamp = 0;
+        }
+        internal.cleanup();
+        events.length = 0;
+        repositoryChanges.fire({
+            repository,
+            uri: this.ctx.workspaceUri,
+        } as unknown as ModelChangeEvent);
+        await delay(1200);
+        assert.deepEqual(
+            events.map(event => event.uri.toString()),
+            [historical.toString()]
+        );
+
+        listener.dispose();
+        provider.dispose();
+        onDidChangeWindowState.restore();
+        windowState.restore();
+        windowStateChanges.dispose();
+        sinon.assert.calledOnce(registration.dispose);
+        repositoryChanges.dispose();
+        await fs.rm(source.fsPath, { force: true });
+        await commands.executeCommand('workbench.action.closeAllEditors');
+        originalChanges.dispose();
+    }).timeout(15000);
 }
 
 export function DiffSuite(this: Suite): void {
     test('Open File From Uri (Nothing)', async () => {
-        await commands.executeCommand('fossil.openFileFromUri');
+        await commands.executeCommand('zit.openFileFromUri');
     });
 
-    test('Open File From Uri (non existing fossil path)', async () => {
-        const uri = Uri.from({ scheme: 'fossil', path: 'nowhere' });
-        await commands.executeCommand('fossil.openFileFromUri', uri);
+    test('Open File From Uri (non existing zit path)', async () => {
+        const uri = Uri.from({ scheme: 'zit', path: 'nowhere' });
+        await commands.executeCommand('zit.openFileFromUri', uri);
     });
 
-    test('Open File From Uri (existing fossil path)', async () => {
+    test('Open File From Uri (existing zit path)', async () => {
         const repository = getRepository();
         const uri = Uri.joinPath(this.ctx.workspaceUri, 'a_path.txt');
         const execStub = getExecStub(this.ctx.sandbox);
-        const statusCall = fakeFossilStatus(execStub, 'ADDED a_path.txt');
+        const statusCall = fakeZitStatus(execStub, 'added a_path.txt');
         await repository.updateStatus('Test' as Reason);
         sinon.assert.calledOnce(statusCall);
 
@@ -556,7 +909,7 @@ export function DiffSuite(this: Suite): void {
         const std = this.ctx.sandbox
             .stub(window, 'showTextDocument')
             .resolves();
-        await commands.executeCommand('fossil.openFileFromUri', uri);
+        await commands.executeCommand('zit.openFileFromUri', uri);
         sinon.assert.calledOnceWithExactly(
             otd,
             sinon.match({ path: uri.fsPath })
@@ -573,10 +926,179 @@ export function DiffSuite(this: Suite): void {
     });
 
     test('Open Change From Uri (Nothing)', async () => {
-        await commands.executeCommand('fossil.openChangeFromUri');
+        await commands.executeCommand('zit.openChangeFromUri');
     });
 
     test('Open Change (Nothing)', async () => {
-        await commands.executeCommand('fossil.openChange');
+        const restoreOutput =
+            window.activeTextEditor?.document.uri.scheme === 'output';
+        await commands.executeCommand('workbench.action.closePanel');
+        await commands.executeCommand('workbench.action.closeAllEditors');
+        try {
+            assert.equal(window.activeTextEditor, undefined);
+            await commands.executeCommand('zit.openChange');
+        } finally {
+            if (restoreOutput) {
+                await commands.executeCommand(
+                    'workbench.action.output.toggleOutput'
+                );
+            }
+        }
+    });
+    test('History commands guard absent editors and resources', async () => {
+        await commands.executeCommand('workbench.action.closePanel');
+        await commands.executeCommand('workbench.action.closeAllEditors');
+        assert.equal(window.activeTextEditor, undefined);
+        const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
+        const applyEdit = this.ctx.sandbox.stub(workspace, 'applyEdit');
+        const registerHoverProvider = this.ctx.sandbox.stub(
+            vscode.languages,
+            'registerHoverProvider'
+        );
+        const showTextDocument = this.ctx.sandbox.stub(
+            window,
+            'showTextDocument'
+        );
+        try {
+            const outside = Uri.file('/tmp/outside-zit-history.txt');
+            await commands.executeCommand('zit.fileLog', outside);
+            await commands.executeCommand('zit.revertChange', outside, [], 0);
+            await commands.executeCommand('zit.praise');
+            await commands.executeCommand('zit.openFileFromUri');
+            await commands.executeCommand(
+                'zit.openFileFromUri',
+                Uri.from({
+                    scheme: 'zit',
+                    path: '/malformed-history-uri',
+                    query: 'not-json',
+                })
+            );
+            await commands.executeCommand('zit.openChangeFromUri');
+            await commands.executeCommand('zit.openResource');
+
+            sinon.assert.notCalled(showQuickPick);
+            sinon.assert.notCalled(applyEdit);
+            sinon.assert.notCalled(registerHoverProvider);
+            sinon.assert.notCalled(showTextDocument);
+        } finally {
+            showQuickPick.restore();
+            applyEdit.restore();
+            registerHoverProvider.restore();
+            showTextDocument.restore();
+        }
+    });
+
+    test('Deleted file history compares an empty source to its primary parent', async () => {
+        const repository = getRepository();
+        const uri = Uri.joinPath(this.ctx.workspaceUri, 'deleted-history.txt');
+        const checkin = 'd'.repeat(64) as ZitHash;
+        const parent = 'e'.repeat(64) as ZitHash;
+        const commit: Commit = {
+            author: 'user' as ZitUsername,
+            branch: 'trunk' as ZitBranch,
+            date: new Date('2026-08-15T17:26:35Z'),
+            hash: checkin,
+            message: 'delete file' as ZitCommitMessage,
+        };
+        const details: CommitDetails = {
+            ...commit,
+            files: [
+                {
+                    klass: 'EDITED' as ZitClass,
+                    path: 'deleted-history.txt' as RelativePath,
+                    status: ResourceStatus.DELETED,
+                },
+            ],
+        };
+        this.ctx.sandbox.stub(repository, 'getLogEntries').resolves([commit]);
+        this.ctx.sandbox.stub(repository, 'getCommitDetails').resolves(details);
+        const getInfo = this.ctx.sandbox.stub(
+            repository,
+            'getInfo'
+        ) as sinon.SinonStub;
+        getInfo.withArgs(checkin, 'hash').resolves(checkin);
+        getInfo.withArgs(checkin, 'parent').resolves(parent);
+        const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
+        showQuickPick.onFirstCall().callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[1]);
+        });
+        showQuickPick.onSecondCall().callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[0]);
+        });
+        const diffCommand = this.ctx.sandbox
+            .stub(commands, 'executeCommand')
+            .callThrough()
+            .withArgs('vscode.diff')
+            .resolves();
+
+        await commands.executeCommand('zit.fileLog', uri);
+
+        sinon.assert.calledOnceWithExactly(
+            diffCommand,
+            'vscode.diff',
+            toZitEmptyUri(uri),
+            toZitUri(uri, parent),
+            `deleted-history.txt (empty vs. ${parent.slice(0, 12)})`
+        );
+    });
+
+    test('Root file history compares the check-in to an empty parent', async () => {
+        const repository = getRepository();
+        const uri = Uri.joinPath(this.ctx.workspaceUri, 'root-history.txt');
+        const checkin = 'f'.repeat(64) as ZitHash;
+        const commit: Commit = {
+            author: 'root-user' as ZitUsername,
+            branch: 'trunk' as ZitBranch,
+            date: new Date('2026-08-15T17:26:35Z'),
+            hash: checkin,
+            message: 'root file' as ZitCommitMessage,
+        };
+        const details: CommitDetails = {
+            ...commit,
+            files: [
+                {
+                    klass: 'EDITED' as ZitClass,
+                    path: 'root-history.txt' as RelativePath,
+                    status: ResourceStatus.MODIFIED,
+                },
+            ],
+        };
+        this.ctx.sandbox.stub(repository, 'getLogEntries').resolves([commit]);
+        this.ctx.sandbox.stub(repository, 'getCommitDetails').resolves(details);
+        const getInfo = this.ctx.sandbox.stub(
+            repository,
+            'getInfo'
+        ) as sinon.SinonStub;
+        getInfo.withArgs(checkin, 'hash').resolves(checkin);
+        getInfo.withArgs(checkin, 'parent').resolves(undefined);
+        const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
+        showQuickPick.onFirstCall().callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[1]);
+        });
+        showQuickPick.onSecondCall().callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[0]);
+        });
+        const diffCommand = this.ctx.sandbox
+            .stub(commands, 'executeCommand')
+            .callThrough()
+            .withArgs('vscode.diff')
+            .resolves();
+        this.ctx.sandbox.stub(window, 'activeTextEditor').value({
+            document: { uri },
+        } as vscode.TextEditor);
+
+        await commands.executeCommand('zit.fileLog');
+
+        sinon.assert.calledOnceWithExactly(
+            diffCommand,
+            'vscode.diff',
+            toZitUri(uri, checkin),
+            toZitEmptyUri(uri),
+            `root-history.txt (${checkin.slice(0, 12)} vs. empty)`
+        );
     });
 }

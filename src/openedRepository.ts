@@ -5,85 +5,70 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as path from 'path';
+import type { Stats } from 'fs';
 import * as fs from 'fs/promises';
-import { appendFileSync, existsSync, writeFileSync } from 'fs';
-import { groupBy } from './util';
-import { workspace, window, Uri } from 'vscode';
+import { Uri } from 'vscode';
 import {
-    FossilExecutable,
-    FossilSpawnOptions,
-    FossilArgs,
+    ZitExecutable,
+    ZitSpawnOptions,
+    ZitArgs,
+    ZitCWD,
     ExecResult,
     Reason,
     DocumentFsPath,
-} from './fossilExecutable';
+} from './zitExecutable';
 import { NewBranchOptions } from './interaction';
-import { FossilCWD } from './fossilExecutable';
 import typedConfig from './config';
 
 export type Distinct<T, DistinctName extends string> = T & {
     __TYPE__: DistinctName;
 };
-/** path to .fossil */
-export type FossilPath = Distinct<string, 'path to .fossil'>;
-/** local repository root */
-export type FossilRoot = Distinct<string, 'local repository root'>;
-export type RelativePath = Distinct<string, 'path relative to `FossilRoot`'>;
+/** Local checkout root containing the `.zit` store marker. */
+export type ZitRoot = Distinct<string, 'local Zit checkout root'>;
+export type RelativePath = Distinct<string, 'path relative to `ZitRoot`'>;
 /** path that came from  `showOpenDialog` or `showSaveDialog`*/
 export type UserPath = Distinct<string, 'user path'>;
 /** path from `SourceControlResourceState.resourceUri.fsPath` */
 export type ResourcePath = Distinct<string, 'resourceUri.fsPath'>;
 export type AnyPath = RelativePath | ResourcePath | UserPath;
 
-export type FossilURIString = Distinct<string, 'Fossil URI string'>;
-/** URI for the close
- *
- * * http[s]://[userid[:password]@]host[:port][/path]
- * * ssh://[userid@]host[:port]/path/to/repo.fossil[?fossil=path/fossil.exe]
- * * [file://]path/to/repo.fossil
- */
-export interface FossilURI extends Uri {
-    __TYPE__: 'Fossil URI';
-    toString(): FossilURIString;
+export type ZitURIString = Distinct<string, 'Zit URI string'>;
+/** HTTP(S) sync endpoint accepted by `zit clone`, `pull`, `push`, and `sync`. */
+export interface ZitURI extends Uri {
+    __TYPE__: 'Zit URI';
+    toString(): ZitURIString;
 }
 
-/** Name shown by `fossil remote ls` command */
-export type FossilRemoteName = Distinct<string, 'Fossil Remote Name'>;
-/** https://fossil-scm.org/home/doc/trunk/www/checkin_names.wiki */
-export type FossilBranch = Distinct<string, 'Fossil Branch Name'>;
-/** Color used as `--bgcolor` or `--branchcolor` arguments */
-export type FossilColor = Distinct<string, 'Fossil Branch Color'>;
-/** https://fossil-scm.org/home/doc/trunk/www/checkin_names.wiki#special */
-export type FossilSpecialTags = 'current' | 'parent' | 'tip';
-export type FossilTag = Distinct<string, 'Fossil Tag Name'> | 'closed';
-export type FossilHash = Distinct<string, 'Fossil SHA Hash'>;
-export type FossilCheckin =
-    | FossilBranch
-    | FossilTag
-    | FossilHash
-    | FossilSpecialTags;
-/** Stdout of `fossil status` command */
-export type StatusString = Distinct<string, 'fossil status stdout'>;
-/** Command (i.e 'update', 'merge', ) returned by `fossil undo --dry-run` */
-export type FossilUndoCommand = Distinct<string, 'Undo Command'>;
+export type ZitBranch = Distinct<string, 'Zit branch name'>;
+export type ZitSpecialTags = 'current' | 'parent' | 'tip';
+export type ZitTag = Distinct<string, 'Zit tag name'>;
+export type ZitHash = Distinct<string, 'Zit SHA3-256 hash'>;
+export type ZitCheckin = ZitBranch | ZitTag | ZitHash | ZitSpecialTags;
+
+export interface ZitWorktree {
+    readonly path: ZitRoot;
+    readonly branch?: ZitBranch;
+    readonly checkin?: ZitCheckin;
+    readonly isCurrent: boolean;
+}
+/** Stdout of `zit status`. */
+export type StatusString = Distinct<string, 'zit status stdout'>;
 /** Any commit message */
-export type FossilCommitMessage = Distinct<string, 'Commit Message'>;
+export type ZitCommitMessage = Distinct<string, 'Commit Message'>;
 export const enum MergeAction {
     Merge,
-    Integrate,
     Cherrypick,
 }
-export type FossilUsername = Distinct<string, 'fossil username'>;
-export type FossilPassword = Distinct<string, 'fossil password'>;
+export type ZitUsername = Distinct<string, 'Zit username'>;
+export type ZitPassword = Distinct<string, 'Zit password'>;
 export type StashID = Distinct<number, 'stash id'>;
 
 export interface TimelineOptions extends LogEntryOptions {
     /** Output items affecting filePath only */
     readonly filePath?: RelativePath;
     /**
-     * If `limit` is positive, output the first N entries. If
-     * N is negative, output the first -N lines. If `limit` is
-     * zero, no limit.  Default is -20 meaning 20 lines.
+     * Maximum entries requested from Zit. Values are normalized to the
+     * extension's bounded 1–512 history window.
      */
     readonly limit: number;
     /** Output the list of files changed by each commit */
@@ -91,7 +76,7 @@ export interface TimelineOptions extends LogEntryOptions {
 }
 
 interface LogEntryOptions {
-    readonly checkin?: FossilCheckin;
+    readonly checkin?: ZitCheckin;
 }
 
 export const enum ResourceStatus {
@@ -100,54 +85,55 @@ export const enum ResourceStatus {
     DELETED,
     EXTRA,
     MISSING,
-    RENAMED,
-    CONFLICT,
 }
 
 export interface FileStatus {
     readonly status: ResourceStatus;
-    readonly klass: FossilClass;
+    readonly klass: ZitClass;
     readonly path: string;
-    // `rename` is a valid field since fossil 2.19
-    // field should contain the new path and `path` must contain original path
-    readonly rename?: string;
 }
 
-// parsed `fossil status ...` output
-export interface FossilStatus {
+/** Parsed output from `zit status`, `zit extras`, and `zit diff --brief`. */
+export interface ZitStatus {
     readonly statuses: FileStatus[];
+    readonly branch: ZitBranch;
+    readonly checkin?: ZitCheckin;
     readonly isMerge: boolean;
-    readonly info: Map<string, string>;
-    readonly tags: string[]; // not FossilTag for a reason
-    readonly checkout: { checkin: FossilCheckin; date: string };
+}
+
+export interface ZitStatusResults {
+    readonly status: ExecResult;
+    readonly extras: ExecResult;
+    readonly diff: ExecResult;
 }
 
 export interface BranchDetails {
-    readonly name: FossilBranch;
+    readonly name: ZitBranch;
     readonly isCurrent: boolean;
-    readonly isPrivate: boolean;
+    readonly isClosed: boolean;
 }
 
-export interface FossilRemote {
-    readonly name: FossilRemoteName;
-    readonly uri: FossilURI;
+export interface SyncCredentials {
+    readonly username: ZitUsername;
+    readonly password: ZitPassword;
 }
 
 export interface StashItem {
     readonly stashId: StashID;
     readonly hash: string;
-    readonly date: Date;
-    readonly comment: FossilCommitMessage;
+    readonly fileCount: number;
+    readonly date?: Date;
+    readonly comment: ZitCommitMessage;
 }
 
 export interface Revision {
-    readonly hash: FossilHash;
+    readonly hash: ZitHash;
 }
 
 export interface Commit extends Revision {
-    readonly branch: FossilBranch;
-    readonly message: FossilCommitMessage;
-    readonly author: FossilUsername;
+    readonly branch: ZitBranch;
+    readonly message: ZitCommitMessage;
+    readonly author: ZitUsername;
     readonly date: Date;
 }
 
@@ -155,79 +141,129 @@ export interface CommitDetails extends Commit {
     files: FileStatus[];
 }
 
-export type Praise = [FossilHash, string, FossilUsername];
+export type Annotation = [ZitHash, string, ZitUsername];
+
+interface ArtifactFile {
+    readonly path: RelativePath;
+    readonly hash?: string;
+}
+
+interface ArtifactDetails {
+    readonly comment?: ZitCommitMessage;
+    readonly date?: string;
+    readonly user?: ZitUsername;
+    readonly parents: ZitHash[];
+    readonly files: ArtifactFile[];
+}
+
+interface ResolvedZitInfo {
+    readonly hash: ZitHash;
+    readonly fields: Readonly<Record<string, string>>;
+}
+
+interface CommitSummary {
+    readonly checkin: ZitCheckin;
+    readonly branch?: ZitBranch;
+    readonly message?: ZitCommitMessage;
+    readonly date?: string;
+}
+
+export const MAX_HISTORY_ENTRIES = 512;
 
 const classes = {
     EDITED: ResourceStatus.MODIFIED,
-    EXECUTABLE: ResourceStatus.MODIFIED,
-    UNEXEC: ResourceStatus.MODIFIED,
-    SYMLINK: ResourceStatus.MODIFIED,
-    UNLINK: ResourceStatus.MODIFIED,
-    UPDATED_BY_INTEGRATE: ResourceStatus.MODIFIED,
-    UPDATED_BY_MERGE: ResourceStatus.MODIFIED,
-    ADDED_BY_INTEGRATE: ResourceStatus.ADDED,
-    ADDED_BY_MERGE: ResourceStatus.ADDED,
     ADDED: ResourceStatus.ADDED,
     DELETED: ResourceStatus.DELETED,
-    NOT_A_FILE: ResourceStatus.MISSING,
     MISSING: ResourceStatus.MISSING,
-    CONFLICT: ResourceStatus.CONFLICT,
-    RENAMED: ResourceStatus.RENAMED,
     EXTRA: ResourceStatus.EXTRA,
 } as const;
-export type FossilClass = keyof typeof classes;
+export type ZitClass = keyof typeof classes;
 
-function toStatus(klass: FossilClass, value: string): FileStatus {
-    const status = classes[klass];
-    // fossil did't have "->" before 2.19
-    const idx = value.indexOf('->');
-    if (idx != -1 || klass === 'RENAMED') {
-        const [from_path, to_path] = value.split('  ->  ');
-        return {
-            klass,
-            status,
-            path: from_path as RelativePath,
-            rename: to_path ?? from_path,
-        };
-    } else {
-        return { klass, status, path: value as RelativePath };
-    }
+function toStatus(klass: ZitClass, value: string): FileStatus {
+    return { klass, status: classes[klass], path: value as RelativePath };
 }
-
-export type ConfigKey =
-    | 'project-name'
-    | 'short-project-name'
-    | 'project-description'
-    | 'last-git-export-repo';
 
 export class OpenedRepository {
     private constructor(
-        private readonly executable: FossilExecutable,
-        public readonly root: FossilRoot
+        private readonly executable: ZitExecutable,
+        public readonly root: ZitRoot
     ) {}
 
     static async tryOpen(
-        executable: FossilExecutable,
-        anypath: string
+        executable: ZitExecutable,
+        anyPath: string
     ): Promise<OpenedRepository | undefined> {
-        const isFile = (await fs.stat(anypath)).isFile();
-        const cwd = (isFile ? path.dirname(anypath) : anypath) as FossilCWD;
-        const result = await executable.exec(
-            cwd,
-            ['info'],
-            `getting root for '${anypath}'` as Reason
-        );
-        const root = result.stdout.match(/local-root:\s*(.+)\/\s/);
-        if (root) {
-            return new OpenedRepository(executable, root[1] as FossilRoot);
+        const root = await executable.findRoot(anyPath);
+        return root ? new OpenedRepository(executable, root) : undefined;
+    }
+
+    static init(
+        executable: ZitExecutable,
+        directory: ZitRoot
+    ): Promise<ExecResult> {
+        const cwd = path.dirname(directory) as ZitCWD;
+        return executable.exec(cwd, ['init', directory]);
+    }
+
+    static clone(
+        executable: ZitExecutable,
+        uri: ZitURI,
+        directory: ZitRoot,
+        signal?: AbortSignal
+    ): Promise<ExecResult> {
+        const cwd = path.dirname(directory) as ZitCWD;
+        const args: ZitArgs = ['clone', uri.toString(), directory];
+        return signal
+            ? executable.exec(cwd, args, undefined, { signal })
+            : executable.exec(cwd, args);
+    }
+
+    static async isMaterialized(
+        executable: ZitExecutable,
+        directory: ZitRoot
+    ): Promise<boolean> {
+        try {
+            const checkout = await fs.stat(
+                path.join(directory, '.zit-checkout')
+            );
+            if (!checkout.isFile()) {
+                return false;
+            }
+
+            const status = await executable.exec(
+                directory as ZitCWD,
+                ['status'],
+                undefined,
+                { logErrors: false }
+            );
+            return (
+                status.exitCode === 0 &&
+                /^On branch .+ \(check-in [0-9a-f]+\)$/m.test(status.stdout)
+            );
+        } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT' || code === 'ENOTDIR') {
+                return false;
+            }
+            throw error;
         }
-        return;
+    }
+
+    static open(
+        executable: ZitExecutable,
+        directory: ZitRoot,
+        checkin?: ZitCheckin
+    ): Promise<ExecResult> {
+        return executable.exec(directory as ZitCWD, [
+            'open',
+            ...(checkin ? [checkin] : []),
+        ]);
     }
 
     async exec(
-        args: FossilArgs,
+        args: ZitArgs,
         reason?: Reason,
-        options: Omit<FossilSpawnOptions, 'cwd'> = {} as const
+        options: Omit<ZitSpawnOptions, 'cwd'> = {}
     ): Promise<ExecResult> {
         return this.executable.exec(this.root, args, reason, options);
     }
@@ -236,331 +272,417 @@ export class OpenedRepository {
         await this.exec(['add', '--', ...(paths || [])]);
     }
 
-    async ls(paths: DocumentFsPath[]): Promise<string[]> {
-        const result = await this.exec(['ls', ...paths]);
-        return result.stdout.split('\n').filter(Boolean);
+    async ls(): Promise<string[]> {
+        const result = await this.exec(['ls']);
+        if (result.exitCode) {
+            throw new Error(result.stderr.trim() || 'zit ls failed');
+        }
+        return result.stdout
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map(line => {
+                const match = /^[0-9a-f]{64} (.+)$/i.exec(line);
+                if (!match) {
+                    throw new Error(`Unexpected zit ls output: ${line}`);
+                }
+                return this.decodeArtifactField(match[1]);
+            });
     }
 
     async cat(
         relativePath: RelativePath,
-        checkin: FossilCheckin
+        checkin: ZitCheckin
     ): Promise<Buffer | undefined> {
-        return this.executable.cat(this.root, [
-            'cat',
-            ...(checkin ? (['-r', checkin] as const) : ([] as const)),
-            '--',
-            relativePath,
-        ]);
+        return this.executable.cat(this.root, ['cat', relativePath, checkin]);
     }
 
-    /**
-     * @returns: close result. For example `there are unsaved changes
-     *           in the current checkout` in case of an error or an empty
-     *           string on success
-     */
-    async close(): Promise<string> {
-        const result = await this.exec(['close']);
-        return (result.stdout + result.stderr).trim();
-    }
-
-    async update(
-        checkin?: FossilCheckin,
-        dryRun?: true,
-        reason?: Reason
-    ): Promise<ExecResult> {
-        return this.exec(
-            [
-                'update',
-                ...(checkin ? ([checkin] as const) : ([] as const)),
-                ...(dryRun ? (['--dry-run'] as const) : ([] as const)),
-            ],
-            reason,
-            { logErrors: !dryRun }
-        );
+    async update(checkin: ZitCheckin, reason?: Reason): Promise<ExecResult> {
+        return this.exec(['update', checkin], reason);
     }
 
     async commit(
-        message: FossilCommitMessage,
-        fileList: RelativePath[],
-        user: FossilUsername,
-        newBranch: NewBranchOptions | undefined
+        message: ZitCommitMessage,
+        user: ZitUsername,
+        newBranch: NewBranchOptions | undefined,
+        closeBranch: boolean = false
     ): Promise<ExecResult> {
-        // always pass a message, otherwise fossil
-        // internal editor will spawn
-        const commitArgs: FossilArgs = [
+        const configuredArgs = typedConfig.commitArgs;
+        const author = configuredArgs.includes('--user')
+            ? undefined
+            : user || typedConfig.defaultUsername;
+        const commitArgs: string[] = [
             'commit',
-            ...(user ? (['--user-override', user] as const) : ([] as const)),
-            ...(newBranch
-                ? ([
-                      ...(newBranch.branch
-                          ? (['--branch', newBranch.branch] as const)
-                          : ([] as const)),
-                      ...(newBranch.color
-                          ? (['--branchcolor', newBranch.color] as const)
-                          : ([] as const)),
-                      ...(newBranch.isPrivate
-                          ? (['--private'] as const)
-                          : ([] as const)),
-                  ] as const)
-                : ([] as const)),
+            ...configuredArgs,
+            ...(author ? ['--user', author] : []),
+            ...(newBranch ? ['--branch', newBranch.branch] : []),
+            ...(closeBranch ? ['--close'] : []),
             '-m',
             message,
-            '--',
-            ...fileList,
         ];
-        (commitArgs as string[]).splice(1, 0, ...typedConfig.commitArgs);
         return this.exec(commitArgs);
     }
 
-    async getCurrentBranch(): Promise<FossilBranch | undefined> {
-        const result = await this.exec(['branch', 'current']);
-        if (result.exitCode) {
-            return;
-        }
-        return result.stdout.trim() as FossilBranch;
+    async getCurrentBranch(): Promise<ZitBranch | undefined> {
+        return (await this.getBranches({ includeClosed: true })).find(
+            branch => branch.isCurrent
+        )?.name;
     }
 
-    async newBranch(newBranch: NewBranchOptions): Promise<ExecResult> {
-        return await this.exec([
-            'branch',
-            'new',
-            newBranch.branch,
-            'current',
-            ...(newBranch.isPrivate ? (['--private'] as const) : ([] as const)),
-            ...(newBranch.color
-                ? (['--bgcolor', newBranch.color] as const)
-                : ([] as const)),
+    async getWorktrees(): Promise<ZitWorktree[]> {
+        const result = await this.exec(['worktrees']);
+        if (result.exitCode) {
+            throw new Error(result.stderr.trim() || 'zit worktrees failed');
+        }
+
+        return result.stdout
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map(line => {
+                const marked = /^(\*| ) (.+)$/.exec(line);
+                if (!marked) {
+                    throw new Error(`Unexpected zit worktrees output: ${line}`);
+                }
+
+                const worktree: {
+                    path: ZitRoot;
+                    branch?: ZitBranch;
+                    checkin?: ZitCheckin;
+                    isCurrent: boolean;
+                } = {
+                    path: marked[2] as ZitRoot,
+                    isCurrent: marked[1] === '*',
+                };
+                const state = /^(.*?) +\((.*)\)$/.exec(marked[2]);
+                if (!state) {
+                    return worktree;
+                }
+
+                const checkedOut = /^(.*) at ([0-9a-f]+)$/i.exec(state[2]);
+                const unborn = /^(.*), unborn$/.exec(state[2]);
+                if (checkedOut) {
+                    worktree.path = state[1] as ZitRoot;
+                    worktree.branch = checkedOut[1] as ZitBranch;
+                    worktree.checkin = checkedOut[2] as ZitCheckin;
+                } else if (unborn) {
+                    worktree.path = state[1] as ZitRoot;
+                    worktree.branch = unborn[1] as ZitBranch;
+                }
+                return worktree;
+            });
+    }
+
+    async createWorktree(destination: ZitRoot): Promise<ExecResult> {
+        return this.executable.exec(destination, [
+            'open',
+            `--store=${this.root}`,
         ]);
     }
 
-    async addTag(branch: FossilBranch, tag: FossilTag): Promise<void> {
-        await this.exec(['tag', 'add', '--raw', tag, branch]);
+    async addTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        await this.exec(['tag', 'add', tag, checkin]);
     }
 
-    async cancelTag(branch: FossilBranch, tag: FossilTag): Promise<void> {
-        await this.exec(['tag', 'cancel', '--raw', tag, branch]);
+    async cancelTag(checkin: ZitCheckin, tag: ZitTag): Promise<void> {
+        await this.exec(['tag', 'cancel', tag, checkin]);
     }
 
     async updateCommitMessage(
-        checkin: FossilCheckin,
-        commitMessage: FossilCommitMessage
+        checkin: ZitCheckin,
+        commitMessage: ZitCommitMessage
     ): Promise<void> {
         await this.exec(['amend', checkin, '--comment', commitMessage]);
     }
 
-    async praise(path: DocumentFsPath): Promise<Praise[]> {
-        const diffPromise = this.exec(['diff', '--json', path]);
-        const praiseRes = await this.exec(['praise', path]);
-        if (praiseRes.exitCode) {
-            return []; // error should be shown to the user already
+    async annotate(
+        documentPath: DocumentFsPath,
+        checkin?: ZitCheckin
+    ): Promise<Annotation[]> {
+        const relativePath = (
+            path.isAbsolute(documentPath)
+                ? path.relative(this.root, documentPath)
+                : documentPath
+        ).replace(/\\/g, '/') as RelativePath;
+        const result = await this.exec([
+            'annotate',
+            relativePath,
+            ...(checkin ? [checkin] : []),
+            '--full',
+        ]);
+        if (result.exitCode) {
+            return [];
         }
-        const praises = praiseRes.stdout
-            .split('\n')
-            .map(line => line.split(/\s+|:/, 3) as Praise);
-        praises.pop(); // empty last line
-        const diffJSONraw = (await diffPromise).stdout;
-        if (diffJSONraw.length > 2) {
-            const diff = JSON.parse(diffJSONraw)[0]['diff'] as (
-                | string
-                | number
-            )[];
-            let lineNo = 0;
-            for (let idx = 0; idx < diff.length; idx += 2) {
-                switch (diff[idx]) {
-                    case 1: // skip N
-                        lineNo += diff[idx + 1] as number;
-                        continue;
-                    // case 2: // info
-                    //     break;
-                    case 3: // new
-                        praises.splice(lineNo, 0, [
-                            '' as FossilHash,
-                            '',
-                            'you' as FossilUsername,
-                        ]);
-                        break;
-                    case 4: // remove
-                        praises.splice(lineNo, 1);
-                        break;
-                    case 5: // change
-                        praises[lineNo] = [
-                            '' as FossilHash,
-                            '',
-                            'you' as FossilUsername,
-                        ];
-                        break;
-                }
-                ++lineNo;
+
+        const annotations: Annotation[] = [];
+        for (const line of result.stdout.split('\n')) {
+            const match = line.match(
+                /^([0-9a-f]{10}|[0-9a-f]{40}|[0-9a-f]{64})\s+(\d{4}-\d{2}-\d{2})\s/
+            );
+            if (match) {
+                annotations.push([
+                    match[1] as ZitHash,
+                    match[2],
+                    '' as ZitUsername,
+                ]);
             }
         }
-        return praises;
+
+        const authors = new Map<ZitHash, ZitUsername>();
+        for (const [checkin] of annotations) {
+            if (!authors.has(checkin)) {
+                const artifact = await this.readArtifact(checkin);
+                authors.set(checkin, artifact.user ?? ('' as ZitUsername));
+            }
+        }
+        return annotations.map(([checkin, date]) => [
+            checkin,
+            date,
+            authors.get(checkin)!,
+        ]);
     }
 
     async revert(paths: RelativePath[]): Promise<void> {
-        const pathsByGroup = groupBy(paths, p => path.dirname(p));
-        const groups = Object.keys(pathsByGroup).map(k => pathsByGroup[k]);
-        const tasks = groups.map(
-            paths => () => this.exec(['revert', '--', ...paths])
-        );
-
-        for (const task of tasks) {
-            await task();
-        }
+        await this.exec(['revert', '--', ...paths]);
     }
 
     async forget(paths: RelativePath[]): Promise<void> {
-        const pathsByGroup = groupBy(paths, p => path.dirname(p));
-        const groups = Object.keys(pathsByGroup).map(k => pathsByGroup[k]);
-        const tasks = groups.map(
-            paths => () => this.exec(['forget', '--', ...paths])
-        );
-
-        for (const task of tasks) {
-            await task();
-        }
+        await this.exec(['rm', '--', ...paths]);
     }
 
     async rename(
         oldPath: AnyPath,
         newPath: RelativePath | UserPath
     ): Promise<void> {
-        await this.exec(['rename', oldPath, newPath]);
-    }
+        const oldRelativePath = (
+            path.isAbsolute(oldPath)
+                ? path.relative(this.root, oldPath)
+                : oldPath
+        ).replace(/\\/g, '/') as RelativePath;
+        const newRelativePath = (
+            path.isAbsolute(newPath)
+                ? path.relative(this.root, newPath)
+                : newPath
+        ).replace(/\\/g, '/') as RelativePath;
+        const oldAbsolutePath = path.join(this.root, oldRelativePath);
+        const newAbsolutePath = path.join(this.root, newRelativePath);
 
-    async clean(paths: DocumentFsPath[]): Promise<void> {
-        if (paths.length) {
-            await this.exec(['clean', ...paths]);
+        let oldStatus: Stats | undefined;
+        let newStatus: Stats | undefined;
+        try {
+            oldStatus = await fs.lstat(oldAbsolutePath);
+        } catch (error: unknown) {
+            if (
+                !error ||
+                typeof error !== 'object' ||
+                !('code' in error) ||
+                error.code !== 'ENOENT'
+            ) {
+                throw error;
+            }
         }
-    }
-
-    /**
-     * this method differs from `clean` because cleaning empty
-     * paths[] will cause damage
-     */
-    async cleanAll(): Promise<void> {
-        await this.exec(['clean']);
-    }
-
-    async ignore(paths: RelativePath[]): Promise<void> {
-        const path = '.fossil-settings/ignore-glob' as RelativePath;
-        const ignorePath = this.root + '/' + path;
-        if (existsSync(ignorePath)) {
-            appendFileSync(ignorePath, paths.join('\n') + '\n');
-        } else {
-            await fs.mkdir(this.root + '/.fossil-settings/');
-            writeFileSync(ignorePath, paths.join('\n') + '\n');
-            this.add([path]);
+        try {
+            newStatus = await fs.lstat(newAbsolutePath);
+        } catch (error: unknown) {
+            if (
+                !error ||
+                typeof error !== 'object' ||
+                !('code' in error) ||
+                error.code !== 'ENOENT'
+            ) {
+                throw error;
+            }
         }
-        const document = await workspace.openTextDocument(ignorePath);
-        window.showTextDocument(document);
-    }
 
-    async undoOrRedo<DRY extends boolean>(
-        command: 'undo' | 'redo',
-        dryRun: DRY
-    ): Promise<FossilUndoCommand | undefined | 'NoUndo'>;
-    async undoOrRedo(
-        command: 'undo' | 'redo',
-        dryRun: boolean
-    ): Promise<FossilUndoCommand | undefined | 'NoUndo'> {
-        const result = await this.exec([
-            command,
-            ...(dryRun ? (['--dry-run'] as const) : ([] as const)),
-        ]);
-        if (result.exitCode == 0 && !dryRun) {
+        if (
+            oldStatus ||
+            !newStatus ||
+            newStatus.isDirectory() ||
+            oldRelativePath === '..' ||
+            oldRelativePath.startsWith('../') ||
+            newRelativePath === '..' ||
+            newRelativePath.startsWith('../')
+        ) {
+            const result = await this.exec([
+                'mv',
+                '--',
+                oldRelativePath,
+                newRelativePath,
+            ]);
+            if (result.exitCode !== 0) {
+                throw new Error(result.stderr.trim() || 'zit mv failed');
+            }
             return;
         }
-        const match =
-            /A(n un| re)do is available for the following command:\s+(.*)/.exec(
-                result.stdout
-            );
 
-        if (!match) {
-            const no_undo =
-                /^nothing to undo/.test(result.stderr) || // non dry
-                /^No undo or redo is available/.test(result.stdout); // dry
-            if (no_undo) {
-                return 'NoUndo';
-            }
-            throw new Error(`Unexpected output ${result.stdout}`);
+        await fs.rename(newAbsolutePath, oldAbsolutePath);
+        let result: ExecResult;
+        try {
+            result = await this.exec([
+                'mv',
+                '--',
+                oldRelativePath,
+                newRelativePath,
+            ]);
+        } catch (error: unknown) {
+            await fs.rename(oldAbsolutePath, newAbsolutePath);
+            throw error;
         }
-
-        return match[2] as FossilUndoCommand;
+        if (result.exitCode !== 0) {
+            await fs.rename(oldAbsolutePath, newAbsolutePath);
+            throw new Error(result.stderr.trim() || 'zit mv failed');
+        }
     }
 
-    async pull(name: FossilRemoteName): Promise<void> {
-        await this.exec(['pull', name]);
+    async clean(dryRun: boolean): Promise<ExecResult> {
+        return this.exec(['clean', dryRun ? '--dry-run' : '--force']);
     }
 
-    async push(name: FossilRemoteName | undefined): Promise<void> {
-        await this.exec([
+    async undoOrRedo(command: 'undo' | 'redo'): Promise<undefined | 'NoUndo'> {
+        const result = await this.exec([command]);
+        if (result.exitCode === 0) {
+            return;
+        }
+        if (
+            result.exitCode === 1 &&
+            new RegExp(`^zit ${command}: nothing to ${command}$`, 'm').test(
+                result.stderr
+            )
+        ) {
+            return 'NoUndo';
+        }
+        throw new Error(result.stderr.trim() || `zit ${command} failed`);
+    }
+
+    async pull(
+        url?: ZitURI,
+        options?: Omit<ZitSpawnOptions, 'cwd'>
+    ): Promise<void> {
+        const args: ZitArgs = ['pull', ...(url ? [url.toString()] : [])];
+        await (options ? this.exec(args, undefined, options) : this.exec(args));
+    }
+
+    async push(
+        url?: ZitURI,
+        credentials?: SyncCredentials,
+        options?: Omit<ZitSpawnOptions, 'cwd'>
+    ): Promise<void> {
+        const args: ZitArgs = [
             'push',
-            ...(name ? ([name] as const) : ([] as const)),
-        ]);
+            ...(url ? [url.toString()] : []),
+            ...(credentials
+                ? [
+                      '--user',
+                      credentials.username,
+                      '--password',
+                      credentials.password,
+                  ]
+                : []),
+        ];
+        await (options ? this.exec(args, undefined, options) : this.exec(args));
+    }
+
+    async sync(
+        url?: ZitURI,
+        credentials?: SyncCredentials,
+        options?: Omit<ZitSpawnOptions, 'cwd'>
+    ): Promise<ExecResult> {
+        const args: ZitArgs = [
+            'sync',
+            ...(url ? [url.toString()] : []),
+            ...(credentials
+                ? [
+                      '--user',
+                      credentials.username,
+                      '--password',
+                      credentials.password,
+                  ]
+                : []),
+        ];
+        return options ? this.exec(args, undefined, options) : this.exec(args);
+    }
+
+    async getRemote(): Promise<ZitURI | undefined> {
+        const result = await this.exec(['remote']);
+        const value = result.stdout.trim();
+        return value && value !== 'no remote set'
+            ? (Uri.parse(value) as ZitURI)
+            : undefined;
+    }
+
+    async setRemote(url?: ZitURI): Promise<ExecResult> {
+        return this.exec(
+            url ? ['remote', url.toString()] : ['remote', '--unset']
+        );
+    }
+
+    async setAutoSync(enabled: boolean): Promise<void> {
+        await this.exec(['settings', 'autosync', enabled ? 'on' : 'off']);
     }
 
     async merge(
-        checkin: FossilCheckin,
-        integrate: MergeAction
+        checkin: ZitCheckin,
+        action: MergeAction,
+        options?: Omit<ZitSpawnOptions, 'cwd'>
     ): Promise<ExecResult> {
-        const extraArgs = (() => {
-            switch (integrate) {
-                case MergeAction.Cherrypick:
-                    return ['--cherrypick'] as const;
-                case MergeAction.Integrate:
-                    return ['--integrate'] as const;
-                default:
-                    return [] as const;
+        const extraArgs =
+            action === MergeAction.Cherrypick
+                ? (['--cherrypick'] as const)
+                : ([] as const);
+        const args: ZitArgs = ['merge', ...extraArgs, checkin];
+        return options ? this.exec(args, undefined, options) : this.exec(args);
+    }
+
+    parseMergeConflictPaths(stderr: string): RelativePath[] {
+        const conflicts = new Set<RelativePath>();
+        for (const line of stderr.split(/\r?\n/)) {
+            const match = /^zit merge: conflict in (.+)$/.exec(line);
+            if (match) {
+                conflicts.add(
+                    path.normalize(match[1]).replace(/\\/g, '/') as RelativePath
+                );
             }
-        })();
-        return this.exec(['merge', checkin, ...extraArgs]);
+        }
+        return [...conflicts];
     }
 
-    async patchCreate(path: UserPath): Promise<void> {
-        await this.exec(['patch', 'create', path]);
-    }
-
-    async patchApply(path: UserPath): Promise<void> {
-        await this.exec(['patch', 'apply', path]);
-    }
-
-    async stash(
-        message: FossilCommitMessage,
-        operation: 'save' | 'snapshot',
-        paths: RelativePath[]
-    ): Promise<void> {
-        await this.exec(['stash', operation, '-m', message, ...paths]);
+    async stash(message: ZitCommitMessage): Promise<void> {
+        await this.exec(['stash', 'save', '-m', message]);
     }
 
     async stashList(): Promise<StashItem[]> {
-        const res = await this.exec(['stash', 'list']);
-        const out: StashItem[] = [];
-        const lines = res.stdout.split('\n');
-        for (let idx = 0; idx < lines.length; ++idx) {
-            const line = lines[idx];
-            if (line[5] == ':') {
-                const match = line.match(/\s+(\d+):\s*\[(\w+)\] on (.*)/);
-                if (!match) {
-                    console.log('unexpected fossil stash output: ', line);
-                } else {
-                    let comment = '' as FossilCommitMessage;
-                    if (lines[idx + 1][5] != ':') {
-                        comment = lines[++idx].trim() as FossilCommitMessage;
-                    }
-                    out.push({
-                        stashId: parseInt(match[1], 10) as StashID,
-                        hash: match[2],
-                        date: new Date(match[3] + '.000Z'),
-                        comment,
-                    });
-                }
+        const result = await this.exec(['stash', 'list']);
+        const entries: StashItem[] = [];
+        const pattern =
+            /^(?<id>\d+):\s+\[(?<hash>[0-9a-f]+)\]\s+(?<files>\d+)\s+file\(s\)(?:\s+(?:-|—)\s+(?<message>.*\S))?\s*$/i;
+        for (const line of result.stdout.split('\n')) {
+            const groups = line.match(pattern)?.groups;
+            if (!groups) {
+                continue;
             }
+            entries.push({
+                stashId: Number.parseInt(groups.id, 10) as StashID,
+                hash: groups.hash,
+                fileCount: Number.parseInt(groups.files, 10),
+                comment: (groups.message ?? '') as ZitCommitMessage,
+            });
         }
-        return out;
+        return entries;
     }
 
-    async stashPop(): Promise<void> {
-        await this.exec(['stash', 'pop']);
+    async stashShow(stashId?: StashID): Promise<string> {
+        const result = await this.exec([
+            'stash',
+            'show',
+            ...(stashId === undefined ? [] : [`${stashId}`]),
+        ]);
+        return result.stdout;
+    }
+
+    async stashPop(stashId?: StashID): Promise<void> {
+        await this.exec([
+            'stash',
+            'pop',
+            ...(stashId === undefined ? [] : [`${stashId}`]),
+        ]);
     }
 
     async stashApplyOrDrop(
@@ -573,47 +695,264 @@ export class OpenedRepository {
     /** Report the change status of files in the current checkout
      *  Status call is expected to be throttled by the caller
      */
-    async getStatus(reason: Reason): Promise<ExecResult> {
-        return this.exec(['status', '--differ', '--merge'], reason);
+    /** Report the current checkout state from Zit’s three status surfaces. */
+    async getStatus(reason: Reason): Promise<ZitStatusResults> {
+        const [status, extras, diff] = await Promise.all([
+            this.exec(['status'], reason),
+            this.exec(['extras'], reason),
+            this.exec(['diff', '--brief'], reason),
+        ]);
+        return { status, extras, diff };
     }
 
-    parseStatusString(status: StatusString): FossilStatus {
-        const statuses: FileStatus[] = [];
-        const info = new Map<string, string>();
+    parseStatusString(status: StatusString, extras = '', diff = ''): ZitStatus {
+        const statuses = new Map<string, FileStatus>();
+        let branch: ZitBranch | undefined;
+        let checkin: ZitCheckin | undefined;
+        let isMerge = false;
 
-        for (const line of status.split('\n')) {
-            const match = line.match(/^(\S+?):?\s+(.+)$/);
+        const normalizePath = (value: string): string => {
+            const trimmed = value.trim();
+            return trimmed ? path.normalize(trimmed).replace(/\\/g, '/') : '';
+        };
+        const addStatus = (klass: ZitClass, value: string): void => {
+            const normalized = normalizePath(value);
+            if (normalized && !statuses.has(normalized)) {
+                statuses.set(normalized, toStatus(klass, normalized));
+            }
+        };
+
+        for (const line of status.split(/\r?\n/)) {
+            const header =
+                /^On branch (.+) \(check-in ([0-9a-f]+)\)$/.exec(line) ??
+                /^On branch (.+) \(no check-ins yet\)$/.exec(line);
+            if (header) {
+                branch = header[1] as ZitBranch;
+                checkin = header[2] as ZitCheckin | undefined;
+                continue;
+            }
+            const file = /^(added|edited|missing) (.+)$/.exec(line);
+            if (file) {
+                const klass = {
+                    added: 'ADDED',
+                    edited: 'EDITED',
+                    missing: 'MISSING',
+                }[file[1]] as ZitClass;
+                addStatus(klass, file[2]);
+                continue;
+            }
+            if (/^pending (?:merge|cherry-pick|backout) with /.test(line)) {
+                isMerge = true;
+            }
+        }
+
+        for (const line of diff.split(/\r?\n/)) {
+            const match = /^([AMD]) (.+)$/.exec(line);
             if (!match) {
                 continue;
             }
-            const [, key, value] = match;
-            if (key in classes) {
-                statuses.push(toStatus(key as FossilClass, value));
-            } else {
-                info.set(key, value);
+            const klass = { A: 'ADDED', M: 'EDITED', D: 'DELETED' }[
+                match[1]
+            ] as ZitClass;
+            addStatus(klass, this.decodeArtifactField(match[2]));
+        }
+
+        for (const line of extras.split(/\r?\n/)) {
+            const extraPath = normalizePath(line);
+            if (extraPath && extraPath !== '.zit-stash') {
+                addStatus('EXTRA', extraPath);
             }
         }
-        const checkoutStr = info.get('checkout')!;
-        const spaceIdx = checkoutStr.indexOf(' ');
-        const checkout = {
-            checkin: checkoutStr.slice(0, spaceIdx) as FossilCheckin,
-            date: checkoutStr.slice(spaceIdx + 1),
-        };
-        const tags = info
-            .get('tags')!
-            .split(',')
-            .map(t => t.trim());
-        const isMerge =
-            info.has('CHERRYPICK') ||
-            info.has('BACKOUT') ||
-            info.has('INTEGRATE') ||
-            info.has('MERGED_WITH');
+
+        if (!branch) {
+            throw new Error('Unexpected zit status output: missing branch');
+        }
         return {
-            statuses,
+            statuses: [...statuses.values()],
+            branch,
+            checkin,
             isMerge,
-            info,
-            checkout,
-            tags,
+        };
+    }
+
+    private decodeArtifactField(value: string): string {
+        return value.replace(
+            /\\([snrt\\])/g,
+            (_match: string, escaped: string) => {
+                switch (escaped) {
+                    case 's':
+                        return ' ';
+                    case 'n':
+                        return '\n';
+                    case 'r':
+                        return '\r';
+                    case 't':
+                        return '\t';
+                    default:
+                        return '\\';
+                }
+            }
+        );
+    }
+
+    private parseArtifact(raw: string): ArtifactDetails {
+        let comment: ZitCommitMessage | undefined;
+        let date: string | undefined;
+        let user: ZitUsername | undefined;
+        const parents: ZitHash[] = [];
+        const files: ArtifactFile[] = [];
+
+        for (const line of raw.split('\n')) {
+            const card = line[0];
+            const value = line.slice(2);
+            switch (card) {
+                case 'C':
+                    comment = this.decodeArtifactField(
+                        value
+                    ) as ZitCommitMessage;
+                    break;
+                case 'D':
+                    date = value;
+                    break;
+                case 'F': {
+                    const [encodedPath, hash] = value.split(' ');
+                    if (encodedPath) {
+                        files.push({
+                            path: this.decodeArtifactField(
+                                encodedPath
+                            ) as RelativePath,
+                            hash,
+                        });
+                    }
+                    break;
+                }
+                case 'P':
+                    for (const hash of value.split(' ')) {
+                        if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(hash)) {
+                            parents.push(hash as ZitHash);
+                        }
+                    }
+                    break;
+                case 'U':
+                    user = this.decodeArtifactField(value) as ZitUsername;
+                    break;
+            }
+        }
+        return { comment, date, user, parents, files };
+    }
+
+    private async resolveInfo(checkin: ZitCheckin): Promise<ResolvedZitInfo> {
+        const result = await this.exec(['info', checkin]);
+        const lines = result.stdout.trimEnd().split('\n');
+        const hash = lines[0];
+        if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(hash)) {
+            throw new Error(`zit check-in '${checkin}' did not resolve`);
+        }
+
+        const fields: Record<string, string> = {};
+        for (const line of lines.slice(1)) {
+            const match = line.match(/^([a-z]+):\s*(.*)$/);
+            if (match) {
+                fields[match[1]] = match[2];
+            }
+        }
+        return { hash: hash as ZitHash, fields };
+    }
+
+    private async readArtifact(checkin: ZitHash): Promise<ArtifactDetails> {
+        const result = await this.exec(['artifact', checkin, '--raw']);
+        if (result.exitCode) {
+            throw new Error(`zit artifact '${checkin}' could not be read`);
+        }
+        return this.parseArtifact(result.stdout);
+    }
+
+    private parseDiffRecords(output: string): FileStatus[] {
+        const changed: FileStatus[] = [];
+        for (const line of output.split('\n')) {
+            const match = line.match(/^([AMD])(?:\t| +)(.+)$/);
+            if (!match) {
+                continue;
+            }
+            const klass: ZitClass =
+                match[1] === 'A'
+                    ? 'ADDED'
+                    : match[1] === 'D'
+                      ? 'DELETED'
+                      : 'EDITED';
+            const normalizedPath = path
+                .normalize(this.decodeArtifactField(match[2]))
+                .replace(/\\/g, '/') as RelativePath;
+            changed.push({
+                klass,
+                status: classes[klass],
+                path: normalizedPath,
+            });
+        }
+        return changed;
+    }
+
+    async diff(from: ZitCheckin, to: ZitCheckin): Promise<FileStatus[]> {
+        const result = await this.exec([
+            'diff',
+            '--brief',
+            '--from',
+            from,
+            '--to',
+            to,
+        ]);
+        if (result.exitCode) {
+            throw new Error(result.stderr.trim() || 'zit diff failed');
+        }
+        return this.parseDiffRecords(result.stdout);
+    }
+
+    private async changedFiles(
+        checkin: ZitHash,
+        artifact: ArtifactDetails
+    ): Promise<FileStatus[]> {
+        const parent = artifact.parents[0];
+        if (!parent) {
+            return artifact.files
+                .filter(file => file.hash !== undefined)
+                .map(file => ({
+                    klass: 'ADDED',
+                    status: ResourceStatus.ADDED,
+                    path: file.path,
+                }));
+        }
+        return this.diff(parent, checkin);
+    }
+
+    private async enrichCommit(
+        summary: CommitSummary,
+        includeFiles: boolean
+    ): Promise<Commit | CommitDetails> {
+        const info = await this.resolveInfo(summary.checkin);
+        const artifact = await this.readArtifact(info.hash);
+        const date = summary.date ?? artifact.date;
+        if (!date) {
+            throw new Error(`zit check-in '${info.hash}' has no date`);
+        }
+        const commit: Commit = {
+            hash: info.hash,
+            branch:
+                summary.branch ??
+                ((info.fields.branch || 'trunk') as ZitBranch),
+            message:
+                summary.message ?? artifact.comment ?? ('' as ZitCommitMessage),
+            author:
+                (info.fields.user as ZitUsername | undefined) ??
+                artifact.user ??
+                ('' as ZitUsername),
+            date: new Date(date.endsWith('Z') ? date : `${date}Z`),
+        };
+        if (!includeFiles) {
+            return commit;
+        }
+        return {
+            ...commit,
+            files: await this.changedFiles(info.hash, artifact),
         };
     }
 
@@ -623,163 +962,139 @@ export class OpenedRepository {
         limit,
         verbose,
     }: TimelineOptions): Promise<Commit[] | CommitDetails[]> {
-        const result = await this.exec([
-            'timeline',
-            ...(checkin ? (['before', checkin] as const) : ([] as const)),
-            ...(limit ? (['-n', `${limit}`] as const) : ([] as const)),
-            ...(filePath ? (['-p', filePath] as const) : ([] as const)),
-            ...(verbose ? (['--verbose'] as const) : ([] as const)),
-            '--type',
-            'ci',
-            '--format',
-            '%H+++%d+++%b+++%a+++%c',
-        ]);
+        const boundedLimit = Math.min(
+            Math.max(Math.abs(limit) || MAX_HISTORY_ENTRIES, 1),
+            MAX_HISTORY_ENTRIES
+        );
+        const useLog = checkin !== undefined || filePath !== undefined;
+        if (useLog && checkin === undefined) {
+            throw new Error('Zit file history requires a check-in');
+        }
+        const args: ZitArgs = useLog
+            ? [
+                  'log',
+                  '-n',
+                  `${boundedLimit}`,
+                  checkin!,
+                  ...(filePath ? [filePath] : []),
+              ]
+            : ['timeline', '-n', `${boundedLimit}`];
+        const result = await this.exec(args);
+        const summaries: CommitSummary[] = [];
 
-        const logEntries: Commit[] | CommitDetails[] = [];
-        let lastFiles: CommitDetails['files'] = [];
         for (const line of result.stdout.split('\n')) {
-            if (verbose && line.startsWith('   ')) {
-                const [, key, value] = line.match(/^\s*(\S+?)\s+(.+)$/) || [];
-                if (key in classes) {
-                    lastFiles.push(toStatus(key as FossilClass, value));
+            if (useLog) {
+                const match = line.match(
+                    /^checkin ([0-9a-f]{40}|[0-9a-f]{64})$/
+                );
+                if (match) {
+                    summaries.push({ checkin: match[1] as ZitHash });
                 }
+                continue;
             }
-            const parts = line.split('+++', 5);
-            if (parts.length == 5) {
-                const [hash, date, branch, author, message] = parts as [
-                    FossilHash,
-                    string,
-                    FossilBranch,
-                    FossilUsername,
-                    FossilCommitMessage
-                ];
-                const commit: Commit = {
-                    hash,
-                    branch,
-                    message,
-                    author,
-                    date: new Date(date + '.000Z'),
-                };
-                if (verbose) {
-                    lastFiles = (commit as CommitDetails).files = [];
-                }
-                logEntries.push(commit as CommitDetails);
+
+            const match = line.match(
+                /^(?:M | {2})([0-9a-f]{12}) {2}(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}) {2}(.+?) {2}(.*)$/
+            );
+            if (match) {
+                summaries.push({
+                    checkin: match[1] as ZitHash,
+                    date: match[2],
+                    branch: match[3] as ZitBranch,
+                    message: match[4] as ZitCommitMessage,
+                });
             }
         }
-        return logEntries;
+
+        const commits: (Commit | CommitDetails)[] = [];
+        for (const summary of summaries) {
+            commits.push(await this.enrichCommit(summary, verbose === true));
+        }
+        return commits as CommitDetails[];
     }
 
     async getInfo(
-        checkin: FossilCheckin,
+        checkin: ZitCheckin,
+        field: 'parent'
+    ): Promise<ZitHash | undefined>;
+    async getInfo(checkin: ZitCheckin, field: 'hash'): Promise<ZitHash>;
+    async getInfo(
+        checkin: ZitCheckin,
         field: 'parent' | 'hash'
-    ): Promise<FossilHash> {
-        const info = await this.exec(['info', checkin]);
-        const parent = info.stdout.match(
-            new RegExp(`^${field}:\\s+(\\w+)`, 'm')
-        );
-        if (parent) {
-            return parent[1] as FossilHash;
+    ): Promise<ZitHash | undefined> {
+        const info = await this.resolveInfo(checkin);
+        if (field === 'hash') {
+            return info.hash;
         }
-        throw new Error(`fossil checkin '${checkin}' has no ${field}`);
+        return (await this.readArtifact(info.hash)).parents[0];
     }
 
-    /**
-     * experimental method to get basic repository configuration
-     */
-    async config<T extends ConfigKey>(keys: T[]): Promise<Map<T, string>> {
-        const result = await this.exec(
-            ['sqlite', '--readonly'],
-            'reading configuration for github' as Reason,
-            {
-                stdin_data:
-                    '.mode json\n' +
-                    'select name, value ' +
-                    'from repository.config ' +
-                    'where name in ' +
-                    "('" +
-                    keys.join("', '") +
-                    "');",
-            }
-        );
-        // sqlite return empty string when there are no rows
-        const rows: { name: T; value: string }[] =
-            result.stdout.length > 9 ? JSON.parse(result.stdout) : [];
-        return new Map(rows.map(row => [row['name'], row['value']]));
-    }
-    async gitExport(): Promise<void> {
-        await this.exec(['git', 'export']);
+    async gitExport(
+        destination: UserPath,
+        options?: Omit<ZitSpawnOptions, 'cwd'>
+    ): Promise<void> {
+        const args: ZitArgs = ['export-git', this.root, destination];
+        await (options ? this.exec(args, undefined, options) : this.exec(args));
     }
 
-    async info(checkin: FossilCheckin): Promise<{ [key: string]: string }> {
-        const info = await this.exec([
-            'info',
-            checkin,
-            '--comment-format',
-            '-wordbreak',
+    async info(checkin: ZitCheckin): Promise<{ [key: string]: string }> {
+        const info = await this.resolveInfo(checkin);
+        const artifact = await this.readArtifact(info.hash);
+        const details: { [key: string]: string } = {
+            checkin: info.hash,
+            ...info.fields,
+        };
+        const comment = info.fields.comment ?? artifact.comment;
+        const user = info.fields.user ?? artifact.user;
+        const date = info.fields.date ?? artifact.date;
+        if (comment !== undefined) {
+            details.comment = comment;
+        }
+        if (user !== undefined) {
+            details.user = user;
+        }
+        if (date !== undefined) {
+            details.date = date;
+        }
+        if (artifact.parents[0]) {
+            details.parent = artifact.parents[0];
+        }
+        return details;
+    }
+
+    async getTags(checkin?: ZitCheckin): Promise<ZitTag[]> {
+        const result = await this.exec([
+            'tag',
+            'list',
+            ...(checkin ? [checkin] : []),
         ]);
-        const ret: { [key: string]: string } = {};
-        let key: string | undefined;
-        const kw = new RegExp(`^(\\w+):\\s+(.*)$`, 'm');
-        for (const line of info.stdout.split('\n')) {
-            if (line.length < 14) {
+        return result.stdout
+            .split('\n')
+            .map(tag => tag.trim())
+            .filter(Boolean) as ZitTag[];
+    }
+
+    async getBranches(
+        opts: { includeClosed?: boolean } = {}
+    ): Promise<BranchDetails[]> {
+        const result = await this.exec(['branch']);
+        const branches: BranchDetails[] = [];
+        for (const line of result.stdout.split('\n')) {
+            const match = line.match(/^(?<marker>\*| ) (?<branch>.+?)\s*$/);
+            const groups = match?.groups;
+            if (!groups) {
                 continue;
             }
-            if (line[0] != ' ') {
-                const match = line.match(kw);
-                if (match) {
-                    key = match[1];
-                    ret[key] = match[2];
-                }
-            } else {
-                ret[key!] += '\n' + line.slice(14);
+            const isClosed = /\s+\(closed\)$/.test(groups.branch);
+            if (isClosed && !opts.includeClosed) {
+                continue;
             }
+            branches.push({
+                name: groups.branch.replace(/\s+\(closed\)$/, '') as ZitBranch,
+                isCurrent: groups.marker === '*',
+                isClosed,
+            });
         }
-        return ret;
-    }
-
-    async getTags(): Promise<FossilTag[]> {
-        const tagsResult = await this.exec(['tag', 'list']);
-        // see comment from `getBranches`
-        const tags = tagsResult.stdout.match(/^(.+)$/gm) as FossilTag[];
-        return tags;
-    }
-
-    async getBranches(opts: { closed?: true } = {}): Promise<BranchDetails[]> {
-        const branchesResult = await this.exec([
-            'branch',
-            'ls',
-            '-t',
-            ...(opts.closed ? (['-c'] as const) : ([] as const)),
-        ]);
-        const branches = Array.from(
-            branchesResult.stdout.matchAll(
-                // Fossil branch names can have spaces and all other characters.
-                // Technically, it's easy to create a branch/tag
-                // with a new line and mess everything here, the only hope
-                // is that we are all adults here
-                /^(?<isPrivate>[# ])(?<isCurrent>[* ])\s(?<name>.+)$/gm
-            )
-        ).map(match => {
-            const groups = match.groups!;
-            return {
-                name: groups.name as FossilBranch,
-                isCurrent: groups.isCurrent == '*',
-                isPrivate: groups.isPrivate == '#',
-            };
-        });
         return branches;
-    }
-
-    async getRemotes(): Promise<FossilRemote[]> {
-        const pathsResult = await this.exec(['remote', 'list']);
-        return [...pathsResult.stdout.matchAll(/^(.+?)\s+(\S+)$/gm)].map(
-            match => {
-                const [, name, uri] = match;
-                return {
-                    name,
-                    uri: Uri.parse(uri),
-                } as FossilRemote;
-            }
-        );
     }
 }

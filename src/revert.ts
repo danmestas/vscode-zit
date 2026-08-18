@@ -6,7 +6,7 @@ import {
     workspace,
     Position,
 } from 'vscode';
-import { toFossilUri } from './uri';
+import { toZitUri } from './uri';
 
 export interface LineChange {
     readonly originalStartLineNumber: number;
@@ -96,7 +96,7 @@ export async function revertChanges(
         return;
     }
 
-    const originalUri = toFossilUri(modifiedUri);
+    const originalUri = toZitUri(modifiedUri);
     const originalDocument = await workspace.openTextDocument(originalUri);
     const visibleRangesBeforeRevert = textEditor.visibleRanges;
     const result = applyLineChanges(

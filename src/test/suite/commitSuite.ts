@@ -1,54 +1,41 @@
-import * as vscode from 'vscode';
-import { Uri, window, commands } from 'vscode';
+import * as assert from 'assert/strict';
+import { commands, Uri, window, workspace, TextDocument } from 'vscode';
 import * as sinon from 'sinon';
+import { Suite, setup } from 'mocha';
 import {
     ExecStub,
-    add,
     assertGroups,
-    cleanupFossil,
     fakeExecutionResult,
-    fakeFossilStatus,
-    fakeRawExecutionResult,
+    fakeZitStatus,
     getExecStub,
-    getRawExecStub,
+    getOpenedRepository,
     getRepository,
-    stubFossilConfig,
 } from './common';
-import * as assert from 'assert/strict';
-import * as fs from 'fs/promises';
-import { Suite, beforeEach } from 'mocha';
-import { Reason } from '../../fossilExecutable';
+import typedConfig from '../../config';
+import { Reason } from '../../zitExecutable';
 import {
-    FossilCommitMessage,
-    FossilUsername,
-    RelativePath,
+    ZitCommitMessage,
     ResourceStatus,
+    ZitUsername,
 } from '../../openedRepository';
 
-export const commitStagedTest = async (
+export const commitTest = async (
     sandbox: sinon.SinonSandbox,
-    command: 'fossil.commit' | 'fossil.commitStaged',
     execStub?: ExecStub
-) => {
+): Promise<void> => {
     const repository = getRepository();
-    assert.equal(
-        repository.sourceControl.inputBox.value,
-        '',
-        'empty input box'
-    );
     execStub ??= getExecStub(sandbox);
-    const statusStub = fakeFossilStatus(execStub, 'ADDED a\nADDED b\n');
+    const statusStub = fakeZitStatus(execStub, 'added a\nadded b\n');
     const commitStub = execStub
         .withArgs(sinon.match.array.startsWith(['commit']))
         .resolves(fakeExecutionResult());
-    await repository.updateStatus();
+
+    await repository.updateStatus('Commit test' as Reason);
     sinon.assert.calledOnce(statusStub);
-    await commands.executeCommand('fossil.stageAll');
-    sinon.assert.calledOnce(statusStub);
-    const sib = sandbox.stub(window, 'showInputBox').resolves('test message');
-    await commands.executeCommand(command);
-    sinon.assert.calledTwice(statusStub);
-    sinon.assert.calledOnceWithExactly(sib, {
+    const input = sandbox.stub(window, 'showInputBox').resolves('test message');
+    await commands.executeCommand('zit.commit');
+
+    sinon.assert.calledOnceWithExactly(input, {
         value: undefined,
         placeHolder: 'Commit message',
         prompt: 'Please provide a commit message',
@@ -57,466 +44,423 @@ export const commitStagedTest = async (
     sinon.assert.calledOnceWithExactly(commitStub, [
         'commit',
         '-m',
-        'test message' as FossilCommitMessage,
-        '--',
-        'a' as RelativePath,
-        'b' as RelativePath,
+        'test message' as ZitCommitMessage,
     ]);
-};
-
-const singleFileCommitSetup = async (
-    sandbox: sinon.SinonSandbox,
-    rootUri: Uri
-) => {
-    const repository = getRepository();
-    const execStub = getExecStub(sandbox);
-    await commands.executeCommand('fossil.unstageAll');
-    const statusStub = fakeFossilStatus(execStub, 'ADDED minimal.txt\n');
-    await repository.updateStatus('test' as Reason);
-    sinon.assert.calledOnce(statusStub);
-    assertGroups(repository, {
-        working: [
-            [Uri.joinPath(rootUri, 'minimal.txt').fsPath, ResourceStatus.ADDED],
-        ],
-    });
-    await commands.executeCommand('fossil.stageAll');
-    assertGroups(repository, {
-        staging: [
-            [Uri.joinPath(rootUri, 'minimal.txt').fsPath, ResourceStatus.ADDED],
-        ],
-    });
-    return { execStub, repository };
 };
 
 export function CommitSuite(this: Suite): void {
     const rootUri = this.ctx.workspaceUri;
 
-    const clearInputBox = () => {
-        const repository = getRepository();
-        repository.sourceControl.inputBox.value = '';
-    };
-    beforeEach(clearInputBox);
+    setup(() => {
+        getRepository().sourceControl.inputBox.value = '';
+    });
 
-    test('Commit using input box', async () => {
+    test('Commit tracked changes using a dialog', async () => {
+        await commitTest(this.ctx.sandbox);
+    });
+
+    test('Commit directly from the Source Control input box', async () => {
         const repository = getRepository();
         const execStub = getExecStub(this.ctx.sandbox);
-        const statusStub = fakeFossilStatus(execStub, 'ADDED fake.txt\n');
-        await repository.updateStatus('Test' as Reason);
+        const statusStub = fakeZitStatus(execStub, 'edited tracked.txt\n');
+        const commitStub = execStub
+            .withArgs(['commit', '-m', 'working tree commit'])
+            .resolves(fakeExecutionResult());
+
+        await repository.updateStatus('Commit input test' as Reason);
         sinon.assert.calledOnce(statusStub);
         assertGroups(repository, {
             working: [
                 [
-                    Uri.joinPath(rootUri, 'fake.txt').fsPath,
-                    ResourceStatus.ADDED,
+                    Uri.joinPath(rootUri, 'tracked.txt').fsPath,
+                    ResourceStatus.MODIFIED,
                 ],
             ],
         });
-        const commitStub = execStub
-            .withArgs(['commit', '-m', 'non empty message', '--', 'fake.txt'])
-            .resolves(fakeExecutionResult());
 
-        const swm: sinon.SinonStub = this.ctx.sandbox.stub(
-            window,
-            'showWarningMessage'
-        );
-        swm.onFirstCall().resolves('C&&onfirm');
-        repository.sourceControl.inputBox.value = 'non empty message';
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithMatch(
-            swm,
-            'There are no staged changes, do you want to commit working changes?\n'
-        );
+        repository.sourceControl.inputBox.value = 'working tree commit';
+        await commands.executeCommand('zit.commitWithInput');
+
         sinon.assert.calledOnce(commitStub);
         assert.equal(repository.sourceControl.inputBox.value, '');
     });
 
-    test('Commit command - commit staging group with dialog', async () => {
-        await commitStagedTest(this.ctx.sandbox, 'fossil.commit');
-    });
-
-    test('CommitStaged command - commit staging group with dialog', async () => {
-        await commitStagedTest(this.ctx.sandbox, 'fossil.commitStaged');
-    });
-
-    test('CommitAll command - commit staging group with dialog', async () => {
+    test('Commit all tracked changes without staging', async () => {
         const repository = getRepository();
-        await cleanupFossil(repository);
         const execStub = getExecStub(this.ctx.sandbox);
-        fakeFossilStatus(execStub, 'ADDED a\nADDED b\n');
+        fakeZitStatus(execStub, 'added a\nedited b\n');
         const commitStub = execStub
-            .withArgs(sinon.match.array.startsWith(['commit']))
+            .withArgs(['commit', '-m', 'all changes'])
             .resolves(fakeExecutionResult());
-        await repository.updateStatus('Test' as Reason);
-        assert.ok(repository.workingGroup.resourceStates[1]);
-        await commands.executeCommand(
-            'fossil.stage',
-            repository.workingGroup.resourceStates[1]
-        );
-        const sib = this.ctx.sandbox
-            .stub(window, 'showInputBox')
-            .resolves('test message all');
-        assertGroups(repository, {
-            working: [
-                [Uri.joinPath(rootUri, 'a').fsPath, ResourceStatus.ADDED],
-            ],
-            staging: [
-                [Uri.joinPath(rootUri, 'b').fsPath, ResourceStatus.ADDED],
-            ],
-        });
-        await commands.executeCommand('fossil.commitAll');
-        sinon.assert.calledOnce(sib);
-        sinon.assert.calledOnceWithExactly(commitStub, [
-            'commit',
-            '-m',
-            'test message all' as FossilCommitMessage,
-            '--',
-        ]);
-    });
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('all changes');
 
-    test('Commit nothing', async () => {
-        const repository = getRepository();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const statusStub = fakeFossilStatus(execStub, '\n');
-        await repository.updateStatus('Test' as Reason);
-        sinon.assert.calledOnce(statusStub);
-        assertGroups(repository, {});
+        await repository.updateStatus('Commit all test' as Reason);
+        await commands.executeCommand('zit.commitAll');
 
-        const sim: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showInformationMessage')
-            .resolves();
-        repository.sourceControl.inputBox.value = 'not committed message';
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithMatch(
-            sim,
-            'There are no changes to commit.'
-        );
-    });
-
-    test('Commit empty message', async () => {
-        const repository = getRepository();
-        assertGroups(repository, {});
-        const uri = Uri.joinPath(rootUri, 'empty_commit.txt');
-        await fs.writeFile(uri.fsPath, 'content');
-
-        const execStub = getExecStub(this.ctx.sandbox);
-        await repository.updateStatus('Test' as Reason);
-        assertGroups(repository, {
-            untracked: [[uri.fsPath, ResourceStatus.EXTRA]],
-        });
-
-        const resource = repository.untrackedGroup.getResource(uri);
-        assert.ok(resource);
-        await commands.executeCommand('fossil.add', resource);
-        assertGroups(repository, {
-            staging: [[uri.fsPath, ResourceStatus.ADDED]],
-        });
-        const commitStub = execStub.withArgs([
-            'commit',
-            '-m',
-            '',
-            '--',
-            'empty_commit.txt',
-        ]);
-
-        repository.sourceControl.inputBox.value = '';
-        const sib = this.ctx.sandbox
-            .stub(window, 'showInputBox')
-            .withArgs(
-                sinon.match({
-                    prompt: 'empty check-in comment.  continue (y/N)? ',
-                    ignoreFocusOut: true,
-                })
-            )
-            .resolves('Y');
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnce(sib);
         sinon.assert.calledOnce(commitStub);
-    }).timeout(6000);
+    });
 
-    test('Commit creating new branch', async () => {
-        const branchPath = Uri.joinPath(rootUri, 'branch.txt');
-        await fs.writeFile(branchPath.fsPath, 'branch content\n');
-
+    test('Nothing to commit does not execute commit', async () => {
         const repository = getRepository();
-        repository.sourceControl.inputBox.value = 'creating new branch';
-        await repository.updateStatus('Test' as Reason);
-        const resource = repository.untrackedGroup.getResource(branchPath);
-        assert.ok(resource);
-        await commands.executeCommand('fossil.add', resource);
-
-        const cib = this.ctx.sandbox.stub(window, 'createInputBox');
-        cib.onFirstCall().callsFake(() => {
-            const inputBox: vscode.InputBox = cib.wrappedMethod();
-            const stub = sinon.stub(inputBox);
-            stub.show.callsFake(() => {
-                stub.value = 'commit branch';
-                const onDidAccept = stub.onDidAccept.getCall(0).args[0];
-                onDidAccept();
-            });
-            return stub;
-        });
         const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, '');
+        const commitStub = execStub.withArgs(
+            sinon.match.array.startsWith(['commit'])
+        );
+        const info = this.ctx.sandbox.stub(window, 'showInformationMessage');
+
+        await repository.updateStatus('Nothing to commit test' as Reason);
+        await commands.executeCommand('zit.commit');
+
+        sinon.assert.notCalled(commitStub);
+        sinon.assert.calledOnce(info);
+    });
+
+    test('Canceling the commit message does not execute commit', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited tracked.txt\n');
+        const commitStub = execStub.withArgs(
+            sinon.match.array.startsWith(['commit'])
+        );
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves(undefined);
+        await getRepository().updateStatus(
+            'Commit message cancellation' as Reason
+        );
+
+        await commands.executeCommand('zit.commit');
+
+        sinon.assert.notCalled(commitStub);
+    });
+
+    test('Canceling branch creation does not execute commit', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited tracked.txt\n');
+        await repository.updateStatus('Branch commit cancellation' as Reason);
+        const commitStub = execStub.withArgs(
+            sinon.match.array.startsWith(['commit'])
+        );
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves(undefined);
+
+        await commands.executeCommand('zit.branch');
+
+        sinon.assert.notCalled(commitStub);
+    });
+
+    test('Commits a new branch with Zit branch argv', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited tracked.txt\n');
+        await repository.updateStatus('Commit branch test' as Reason);
+        const commitStub = execStub
+            .withArgs(['commit', '--branch', 'feature', '-m', 'branch message'])
+            .resolves(fakeExecutionResult());
+        const input = this.ctx.sandbox.stub(window, 'showInputBox');
+        input.onFirstCall().resolves('feature');
+        input.onSecondCall().resolves('branch message');
+
+        await commands.executeCommand('zit.commitBranch');
+
+        sinon.assert.calledOnce(commitStub);
+    });
+
+    test('Closes the current branch with Zit close argv', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited tracked.txt\n');
+        await repository.updateStatus('Close branch test' as Reason);
+        const commitStub = execStub
+            .withArgs(['commit', '--close', '-m', 'close message'])
+            .resolves(fakeExecutionResult());
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('close message');
+
+        await commands.executeCommand('zit.closeBranch');
+
+        sinon.assert.calledOnce(commitStub);
+    });
+
+    test('Commit refusal preserves the Source Control message', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited tracked.txt\n');
+        await repository.updateStatus('Commit refusal' as Reason);
+        const commitStub = execStub
+            .withArgs(['commit', '-m', 'keep this message'])
+            .resolves(
+                fakeExecutionResult({
+                    exitCode: 1,
+                    stderr: 'zit commit: refused\n',
+                })
+            );
+        repository.sourceControl.inputBox.value = 'keep this message';
+
+        await commands.executeCommand('zit.commitWithInput');
+
+        sinon.assert.calledOnce(commitStub);
+        assert.equal(
+            repository.sourceControl.inputBox.value,
+            'keep this message'
+        );
+    });
+
+    const prepareDirtyTrackedDocument = async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        const uri = Uri.joinPath(rootUri, 'dirty-open.txt');
+        fakeZitStatus(execStub, '');
+        const lsStub = execStub.withArgs(['ls']).resolves(
+            fakeExecutionResult({
+                stdout: `${'a'.repeat(64)} dirty-open.txt\n`,
+            })
+        );
+        await repository.updateStatus('Dirty editor commit' as Reason);
+        const save = this.ctx.sandbox.stub().resolves(true);
+        const document = {
+            uri,
+            isUntitled: false,
+            isDirty: true,
+            save,
+        } as unknown as TextDocument;
+        this.ctx.sandbox.stub(workspace, 'textDocuments').value([document]);
+        const clearStatus = async () => {
+            fakeZitStatus(execStub, '');
+            await repository.updateStatus(
+                'Clear dirty editor status' as Reason
+            );
+        };
+        return { execStub, lsStub, save, clearStatus };
+    };
+
+    test('Saves a dirty tracked editor before committing', async () => {
+        const { execStub, lsStub, save, clearStatus } =
+            await prepareDirtyTrackedDocument();
+        const commitStub = execStub
+            .withArgs(['commit', '-m', 'saved editor'])
+            .resolves(fakeExecutionResult());
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves('Save All & Commit');
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('saved editor');
+
+        try {
+            await commands.executeCommand('zit.commit');
+
+            sinon.assert.calledOnce(save);
+            sinon.assert.calledOnceWithExactly(lsStub, ['ls']);
+            sinon.assert.calledOnce(commitStub);
+        } finally {
+            await clearStatus();
+        }
+    });
+
+    test('Canceling a dirty-editor prompt does not commit', async () => {
+        const { execStub, lsStub, save, clearStatus } =
+            await prepareDirtyTrackedDocument();
+        const commitStub = execStub.withArgs(
+            sinon.match.array.startsWith(['commit'])
+        );
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.resolves(undefined);
+        try {
+            await commands.executeCommand('zit.commit');
+
+            sinon.assert.notCalled(save);
+            sinon.assert.calledOnceWithExactly(lsStub, ['ls']);
+            sinon.assert.notCalled(commitStub);
+        } finally {
+            await clearStatus();
+        }
+    });
+    test('Does not commit when tracked-file discovery fails', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited other.txt\n');
+        await repository.updateStatus(
+            'Failed tracked-file discovery' as Reason
+        );
+        const document = {
+            uri: Uri.joinPath(rootUri, 'dirty-open.txt'),
+            isUntitled: false,
+            isDirty: true,
+            save: this.ctx.sandbox.stub().resolves(true),
+        } as unknown as TextDocument;
+        this.ctx.sandbox.stub(workspace, 'textDocuments').value([document]);
+        const lsStub = execStub.withArgs(['ls']).resolves(
+            fakeExecutionResult({
+                exitCode: 1,
+                stderr: 'zit ls: repository unavailable\n',
+            })
+        );
+        repository.sourceControl.inputBox.value = 'must not commit';
+        const commitStub = execStub
+            .withArgs(['commit', '-m', 'must not commit'])
+            .resolves(fakeExecutionResult());
+
+        try {
+            await assert.rejects(
+                Promise.resolve(commands.executeCommand('zit.commitWithInput')),
+                /repository unavailable/
+            );
+            sinon.assert.calledOnceWithExactly(lsStub, ['ls']);
+            sinon.assert.notCalled(commitStub);
+        } finally {
+            repository.sourceControl.inputBox.value = '';
+            fakeZitStatus(execStub, '');
+            await repository.updateStatus(
+                'Clear failed tracked-file discovery status' as Reason
+            );
+        }
+    });
+    test('Warns about multiple dirty tracked editors before commit', async () => {
+        const repository = getRepository();
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited other.txt\n');
+        await repository.updateStatus('Dirty editor plural warning' as Reason);
+        const documents = ['dirty-one.txt', 'dirty-two.txt'].map(name => ({
+            uri: Uri.joinPath(rootUri, name),
+            isUntitled: false,
+            isDirty: true,
+            save: this.ctx.sandbox.stub().resolves(true),
+        })) as unknown as TextDocument[];
+        this.ctx.sandbox.stub(workspace, 'textDocuments').value(documents);
+        const lsStub = execStub.withArgs(['ls']).resolves(
+            fakeExecutionResult({
+                stdout:
+                    `${'a'.repeat(64)} dirty-one.txt\n` +
+                    `${'b'.repeat(64)} dirty-two.txt\n`,
+            })
+        );
+        const warning = this.ctx.sandbox.stub(
+            window,
+            'showWarningMessage'
+        ) as sinon.SinonStub;
+        warning.callsFake(
+            (
+                _message: string,
+                _options: unknown,
+                _saveAndCommit: string,
+                commitWithoutSaving: string
+            ) => Promise.resolve(commitWithoutSaving)
+        );
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('plural dirty');
+        const commitStub = execStub
+            .withArgs(['commit', '-m', 'plural dirty'])
+            .resolves(fakeExecutionResult());
+
+        try {
+            await commands.executeCommand('zit.commit');
+
+            assert.match(
+                warning.firstCall.args[0],
+                /There are 2 unsaved files/
+            );
+            sinon.assert.calledOnceWithExactly(lsStub, ['ls']);
+            sinon.assert.calledOnce(commitStub);
+            for (const document of documents) {
+                sinon.assert.notCalled(document.save as sinon.SinonStub);
+            }
+        } finally {
+            fakeZitStatus(execStub, '');
+            await repository.updateStatus(
+                'Clear plural dirty status' as Reason
+            );
+        }
+    });
+    test('Uses the default username only as a commit fallback', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        this.ctx.sandbox
+            .stub(typedConfig, 'defaultUsername')
+            .get(() => 'default-author' as ZitUsername);
         const commitStub = execStub
             .withArgs([
                 'commit',
-                '--branch',
-                'commit branch',
+                '--user',
+                'default-author',
                 '-m',
-                'creating new branch',
-                '--',
-                'branch.txt',
+                'fallback author',
             ])
             .resolves(fakeExecutionResult());
 
-        await commands.executeCommand('fossil.commitBranch');
-        sinon.assert.calledOnce(commitStub);
-    }).timeout(6000);
-
-    test('Unsaved files warning', async () => {
-        const uri1 = await add('warning1.txt', 'data', 'warning test');
-        const uri2 = await add('warning2.txt', 'data', 'warning test');
-        await fs.writeFile(uri1.fsPath, 'warning test');
-        await fs.writeFile(uri2.fsPath, 'warning test');
-        const repository = getRepository();
-        await repository.updateStatus('Test' as Reason);
-        const resource1 = repository.workingGroup.getResource(uri1);
-        assert.ok(resource1);
-        await commands.executeCommand('fossil.stage', resource1);
-        await commands.executeCommand('fossil.openFiles', resource1);
-        const editor1 = window.visibleTextEditors.find(
-            e => e.document.uri.toString() == uri1.toString()
-        );
-        assert.ok(editor1);
-        await editor1.edit(eb =>
-            eb.insert(new vscode.Position(0, 0), 'edits\n')
-        );
-        repository.sourceControl.inputBox.value = 'my message';
-        const swm: sinon.SinonStub = this.ctx.sandbox.stub(
-            window,
-            'showWarningMessage'
-        );
-        swm.onFirstCall().resolves();
-        swm.onSecondCall().resolves('Save All & Commit');
-
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledWithExactly(
-            swm.firstCall,
-            "The following file has unsaved changes which won't be " +
-                'included in the commit if you proceed: warning1.txt.\n\n' +
-                'Would you like to save it before committing?',
-            { modal: true },
-            'Save All & Commit',
-            'C&&ommit Staged Changes'
+        await getOpenedRepository().commit(
+            'fallback author' as ZitCommitMessage,
+            '' as ZitUsername,
+            undefined
         );
 
-        const resource2 = repository.workingGroup.getResource(uri2);
-        assert.ok(resource2);
-        await commands.executeCommand('fossil.stage', resource2);
-        await commands.executeCommand('fossil.openFiles', resource2);
-
-        const editor2 = window.visibleTextEditors.find(
-            e => e.document.uri.toString() == uri2.toString()
-        );
-        assert.ok(editor2);
-        await editor2.edit(eb =>
-            eb.insert(new vscode.Position(0, 0), 'edits\n')
-        );
-
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledWithExactly(
-            swm.secondCall,
-            'There are 2 unsaved files.\n\nWould you like to save them before committing?',
-            { modal: true },
-            'Save All & Commit',
-            'C&&ommit Staged Changes'
-        );
-    }).timeout(10000);
-
-    test('Conflict commit', async () => {
-        const repository = getRepository();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const statusStub = fakeFossilStatus(execStub, 'ADDED a\nCONFLICT b');
-        await repository.updateStatus('Test' as Reason);
-        sinon.assert.calledOnce(statusStub);
-        repository.sourceControl.inputBox.value = 'must not be committed';
-        const swm: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showWarningMessage')
-            .resolves();
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithExactly(
-            swm,
-            'Resolve conflicts before committing.'
-        );
-        assert.equal(
-            repository.sourceControl.inputBox.value,
-            'must not be committed'
-        );
-    });
-
-    test('Commit missing files', async () => {
-        const repository = getRepository();
-        const execStub = getExecStub(this.ctx.sandbox);
-        const statusStub = fakeFossilStatus(
-            execStub,
-            'ADDED a\nMISSING b\nMISSING c'
-        );
-        await repository.updateStatus('Test' as Reason);
-        sinon.assert.calledOnce(statusStub);
-        const swm: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showWarningMessage')
-            .withArgs(sinon.match(/^Did you want to delete/))
-            .resolves('&&Delete' as any);
-        await commands.executeCommand('fossil.stageAll');
-
-        const forgetStub = execStub
-            .withArgs(sinon.match.array.startsWith(['forget']))
-            .resolves();
-        const commitStub = execStub
-            .withArgs(sinon.match.array.startsWith(['commit']))
-            .resolves(fakeExecutionResult());
-
-        repository.sourceControl.inputBox.value = 'remove files';
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithExactly(
-            swm,
-            'Did you want to delete 2 missing files in this commit?\n\n • b\n • c',
-            { modal: true },
-            '&&Delete'
-        );
-        sinon.assert.calledOnceWithExactly(forgetStub, [
-            'forget',
-            '--',
-            'b' as RelativePath,
-            'c' as RelativePath,
-        ]);
         sinon.assert.calledOnceWithExactly(commitStub, [
             'commit',
+            '--user',
+            'default-author',
             '-m',
-            'remove files' as FossilCommitMessage,
-            '--',
-            'a' as RelativePath,
-            'b' as RelativePath,
-            'c' as RelativePath,
+            'fallback author',
         ]);
     });
 
-    test('Do not commit missing file', async () => {
-        const repository = getRepository();
+    test('An explicit commit username overrides the default', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-        const statusStub = fakeFossilStatus(execStub, 'ADDED a\nMISSING b');
-        await repository.updateStatus('Test' as Reason);
-        sinon.assert.calledOnce(statusStub);
-        repository.sourceControl.inputBox.value = 'must not commit';
-        const swm: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showWarningMessage')
-            .withArgs(sinon.match(/^Did you want to delete/))
-            .resolves();
-        await commands.executeCommand('fossil.stageAll');
-
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithExactly(
-            swm,
-            "Did you want to delete 'b' in this commit?",
-            { modal: true },
-            '&&Delete'
-        );
-    });
-
-    test('Commit with specified username (user-override)', async () => {
-        const configStub = stubFossilConfig(this.ctx.sandbox);
-        configStub.get.withArgs('username').returns('testUsername');
-        const { execStub, repository } = await singleFileCommitSetup(
-            this.ctx.sandbox,
-            rootUri
-        );
+        this.ctx.sandbox
+            .stub(typedConfig, 'defaultUsername')
+            .get(() => 'default-author' as ZitUsername);
         const commitStub = execStub
-            .withArgs(sinon.match.array.startsWith(['commit']))
+            .withArgs([
+                'commit',
+                '--user',
+                'explicit-author',
+                '-m',
+                'explicit author',
+            ])
             .resolves(fakeExecutionResult());
 
-        repository.sourceControl.inputBox.value = 'custom username test';
-        await commands.executeCommand('fossil.commitWithInput');
+        await getOpenedRepository().commit(
+            'explicit author' as ZitCommitMessage,
+            'explicit-author' as ZitUsername,
+            undefined
+        );
+
         sinon.assert.calledOnceWithExactly(commitStub, [
             'commit',
-            '--user-override',
-            'testUsername' as FossilUsername,
+            '--user',
+            'explicit-author',
             '-m',
-            'custom username test' as FossilCommitMessage,
-            '--',
-            'minimal.txt' as RelativePath,
+            'explicit author',
         ]);
     });
 
-    test('Commit with specified defaultUsername', async () => {
-        const configStub = stubFossilConfig(this.ctx.sandbox);
-        configStub.get.withArgs('username').returns('newUsername');
-        configStub.get.withArgs('defaultUsername').returns('defaultUsername');
-        configStub.get.withArgs('globalArgs').returns(['--quiet']);
-
-        const { repository } = await singleFileCommitSetup(
-            this.ctx.sandbox,
-            rootUri
-        );
-
-        const rawCommit = getRawExecStub(this.ctx.sandbox)
-            .withArgs(sinon.match.array.contains(['commit']))
-            .resolves(fakeRawExecutionResult({ stderr: 'lol stderr' }));
-        repository.sourceControl.inputBox.value = 'custom username test2';
-        await commands.executeCommand('fossil.commitWithInput');
-        sinon.assert.calledOnceWithExactly(
-            rawCommit as any,
-            [
-                '--quiet',
-                '--user',
-                'defaultUsername' as FossilUsername,
-                'commit',
-                '--user-override',
-                'newUsername' as FossilUsername,
-                '-m',
-                'custom username test2' as FossilCommitMessage,
-                '--',
-                'minimal.txt' as RelativePath,
-            ],
-            sinon.match.object
-        );
-    });
-
-    test('Commit with `commitArgs` and `globalArgs`', async () => {
-        const configStub = stubFossilConfig(this.ctx.sandbox);
-        configStub.get
-            .withArgs('commitArgs')
-            .returns(['--hash', '--ignore-clock-skew']);
-        configStub.get.withArgs('globalArgs').returns(['--user', 'alex']);
-
-        const repository = getRepository();
+    test('Commit args with an explicit user suppress the default', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-
-        const statusStub = fakeFossilStatus(execStub, 'ADDED a');
-        await repository.updateStatus('Test' as Reason);
-        sinon.assert.calledOnce(statusStub);
-        await commands.executeCommand('fossil.stageAll');
-
-        repository.sourceControl.inputBox.value = 'args test';
-        execStub.restore();
-        const rawCommit = getRawExecStub(this.ctx.sandbox)
-            .withArgs(sinon.match.array.contains(['commit']))
-            .resolves(fakeRawExecutionResult());
-
-        await commands.executeCommand('fossil.commitWithInput');
-
-        sinon.assert.calledOnceWithExactly(
-            rawCommit as any,
-            [
-                '--user',
-                'alex',
+        this.ctx.sandbox
+            .stub(typedConfig, 'defaultUsername')
+            .get(() => 'default-author' as ZitUsername);
+        this.ctx.sandbox
+            .stub(typedConfig, 'commitArgs')
+            .get(() => ['--user', 'commit-args-author']);
+        const commitStub = execStub
+            .withArgs([
                 'commit',
-                '--hash',
-                '--ignore-clock-skew',
+                '--user',
+                'commit-args-author',
                 '-m',
-                'args test',
-                '--',
-                'a',
-            ],
-            sinon.match.object
+                'configured author',
+            ])
+            .resolves(fakeExecutionResult());
+
+        await getOpenedRepository().commit(
+            'configured author' as ZitCommitMessage,
+            '' as ZitUsername,
+            undefined
         );
+
+        sinon.assert.calledOnceWithExactly(commitStub, [
+            'commit',
+            '--user',
+            'commit-args-author',
+            '-m',
+            'configured author',
+        ]);
     });
 }

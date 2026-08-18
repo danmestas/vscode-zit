@@ -7,68 +7,50 @@
 import * as path from 'path';
 import * as os from 'os';
 import {
-    window,
-    QuickPickItem,
-    workspace,
-    ViewColumn,
-    Uri,
-    Disposable,
-    QuickPickItemKind,
+    CancellationError,
     InputBoxOptions,
+    ProgressLocation,
+    QuickPickItem,
+    QuickPickItemKind,
+    Uri,
+    window,
+    workspace,
 } from 'vscode';
 import {
     Commit,
     CommitDetails,
     FileStatus,
-    FossilPath,
-    FossilRoot,
-    FossilURI,
-    FossilBranch,
+    ZitRoot,
+    ZitURI,
+    ZitBranch,
     BranchDetails,
-    FossilTag,
-    FossilCheckin,
-    FossilHash,
-    FossilSpecialTags,
-    FossilUndoCommand,
-    FossilCommitMessage,
-    FossilUsername,
-    FossilPassword,
+    ZitTag,
+    ZitCheckin,
+    ZitHash,
+    ZitSpecialTags,
+    ZitCommitMessage,
+    ZitUsername,
+    ZitPassword,
     StashItem,
     ResourceStatus,
     UserPath,
     RelativePath,
     StashID,
-    FossilRemote,
-    FossilRemoteName,
-    FossilColor,
+    SyncCredentials,
+    ZitWorktree,
 } from './openedRepository';
 import * as humanise from './humanise';
 import { Repository, LogEntriesOptions } from './repository';
 import typedConfig from './config';
 import { localize } from './main';
-import {
-    ExecFailure,
-    FossilArgsWithOptions,
-    FossilCWD,
-    FossilProjectDescription,
-    FossilProjectName,
-    FossilStdOut,
-    FossilWikiTitle,
-} from './fossilExecutable';
-import { ThemeIcon } from 'vscode';
-import { QuickInputButton } from 'vscode';
+import { ExecFailure, ZitArgsWithOptions, ZitStdOut } from './zitExecutable';
 
 const SHORT_HASH_LENGTH = 12;
 const LONG_HASH_LENGTH = SHORT_HASH_LENGTH * 2;
-let lastUsedRepoUrl = 'https://fossil-scm.org/home';
-let lastUsedNewFossilPath: Uri | undefined;
+let lastUsedRepoUrl = '';
+let lastUsedZitRoot: Uri | undefined;
 let lastUsedUser: string | undefined;
-
-export const enum BranchExistsAction {
-    None,
-    Reopen,
-    UpdateTo,
-}
+let lastUsedSyncUser = '';
 
 export const enum CommitSources {
     File,
@@ -76,81 +58,88 @@ export const enum CommitSources {
 }
 
 export interface NewBranchOptions {
-    readonly branch: FossilBranch;
-    readonly color: FossilColor | '';
-    readonly isPrivate: boolean;
+    readonly branch: ZitBranch;
 }
 
-/**
- * @returns (workspaceDir/workspaceName || homedir/repo_name) + '.fossil'
- */
-function suggestRepo(): Uri {
-    const default_name = 'repo_name';
-    const postfix = '.fossil';
+function suggestCheckout(): Uri {
     const folders = workspace.workspaceFolders;
     if (folders?.length) {
-        const firstFolder = folders[0];
-        return Uri.joinPath(firstFolder.uri, firstFolder.name + postfix);
+        return folders[0].uri;
     }
-    return Uri.joinPath(Uri.file(os.homedir()), default_name + postfix);
+    return Uri.joinPath(Uri.file(os.homedir()), 'repo_name');
 }
 
-/** @returns (workspaceDir || homeDir)/filename */
-function suggestPath(filename: string): Uri {
-    const folders = workspace.workspaceFolders;
-    return Uri.joinPath(
-        Uri.file(folders?.length ? folders[0].uri.fsPath : os.homedir()),
-        filename
-    );
-}
-
-/** ask user for the new .fossil file location */
-export async function selectNewFossilPath(
-    saveLabel: 'Clone' | 'Create'
-): Promise<FossilPath | undefined> {
-    const defaultFossilFile = lastUsedNewFossilPath || suggestRepo();
-    const uri = await window.showSaveDialog({
-        defaultUri: defaultFossilFile,
-        title: 'Select New Fossil File Location',
-        saveLabel: saveLabel,
-        filters: {
-            'All files': ['*'],
-        },
-    });
-    if (uri) {
-        lastUsedNewFossilPath = uri;
-    }
-    return uri?.fsPath as FossilPath | undefined;
-}
-
-/**
- * ask user to open existing .fossil file
- *
- * @returns fossil file uri
- */
-export async function selectExistingFossilPath(): Promise<
-    FossilPath | undefined
-> {
-    const defaultFossilFile = suggestRepo();
-    const uri = await window.showOpenDialog({
-        defaultUri: defaultFossilFile,
-        openLabel: 'Repository Location',
-        filters: {
-            'Fossil Files': ['fossil'],
-            'All files': ['*'],
-        },
+export async function selectCheckoutDirectory(
+    openLabel: 'Clone' | 'Create' | 'Open'
+): Promise<ZitRoot | undefined> {
+    const uris = await window.showOpenDialog({
+        defaultUri: lastUsedZitRoot || suggestCheckout(),
+        title: 'Select Zit Checkout Directory',
+        openLabel,
+        canSelectFiles: false,
+        canSelectFolders: true,
         canSelectMany: false,
     });
-    if (uri?.length) {
-        return uri[0].fsPath as FossilPath;
+    const uri = uris?.[0];
+    if (uri) {
+        lastUsedZitRoot = uri;
     }
-    return;
+    return uri?.fsPath as ZitRoot | undefined;
 }
 
-export function statusCloning(clonePromise: Promise<FossilRoot>): Disposable {
-    return window.setStatusBarMessage(
-        localize('cloning', 'Cloning fossil repository...'),
-        clonePromise
+export async function selectEmptyWorktreeDirectory(): Promise<
+    ZitRoot | undefined
+> {
+    const root = await selectCheckoutDirectory('Create');
+    if (!root) {
+        return undefined;
+    }
+
+    const entries = await workspace.fs.readDirectory(Uri.file(root));
+    if (entries.length) {
+        await window.showErrorMessage(
+            localize(
+                'worktree directory not empty',
+                'Select an empty directory for the detached worktree.'
+            )
+        );
+        return undefined;
+    }
+    return root;
+}
+
+export async function runCloneWithProgress<T>(
+    runClone: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+    return window.withProgress(
+        {
+            title: localize('cloning', 'Cloning Zit repository...'),
+            location: ProgressLocation.Notification,
+            cancellable: true,
+        },
+        async (_progress, token) => {
+            const controller = new AbortController();
+            const cancellation = token.onCancellationRequested(() =>
+                controller.abort()
+            );
+            if (token.isCancellationRequested) {
+                controller.abort();
+            }
+            try {
+                const result = await runClone(controller.signal);
+                if (controller.signal.aborted) {
+                    throw new CancellationError();
+                }
+                return result;
+            } catch (error) {
+                if (controller.signal.aborted) {
+                    throw new CancellationError();
+                }
+                throw error;
+            } finally {
+                cancellation.dispose();
+            }
+        }
     );
 }
 
@@ -163,7 +152,7 @@ export function informNoChangesToCommit(): void {
 export async function checkActiveMerge(
     repository: Repository
 ): Promise<boolean> {
-    if (repository.fossilStatus?.isMerge) {
+    if (repository.zitStatus?.isMerge) {
         const doit = localize('continue', 'Continue');
         const answer = await window.showWarningMessage(
             localize('outstanding merge', 'Merge is in progress'),
@@ -181,9 +170,15 @@ export async function warnNoRemotes(): Promise<void> {
     );
 }
 
-export function warnResolveConflicts(this: void): Thenable<string | undefined> {
-    return window.showWarningMessage(
-        localize('conflicts', 'Resolve conflicts before committing.')
+export async function warnMergeConflicts(
+    paths: readonly string[]
+): Promise<void> {
+    await window.showWarningMessage(
+        localize(
+            'merge conflicts',
+            'Merge conflicts require resolution:\n{0}',
+            paths.map(path => ` • ${path}`).join('\n')
+        )
     );
 }
 
@@ -203,13 +198,10 @@ export async function errorPromptOpenLog(err: ExecFailure): Promise<boolean> {
         .filter((line: string) => !!line)[0];
 
     const message = hint
-        ? localize('fossil error details', 'Fossil: {0}', hint)
-        : localize('fossil error', 'Fossil error');
+        ? localize('zit error details', 'Zit: {0}', hint)
+        : localize('zit error', 'Zit error');
 
-    const openOutputChannelChoice = localize(
-        'open fossil log',
-        'Open Fossil Log'
-    );
+    const openOutputChannelChoice = localize('open zit log', 'Open Zit Log');
     const choice = await window.showErrorMessage(
         message,
         openOutputChannelChoice
@@ -229,32 +221,13 @@ export async function promptOpenClonedRepo(this: void): Promise<boolean> {
     return result === open;
 }
 
-export async function confirmOpenNotEmpty(
-    this: void,
-    dir: FossilCWD
-): Promise<boolean> {
-    const open = localize('openrepo', '&&Open Repository');
-
-    const message = localize(
-        'proposeforceopen',
-        'The directory {0} is not empty.\nOpen repository here anyway?',
-        dir
-    );
-    const result = await window.showWarningMessage(
-        message,
-        { modal: true },
-        open
-    );
-    return result === open;
-}
-
 export async function confirmRename(
     oldPath: RelativePath,
     newPath: RelativePath
 ): Promise<boolean> {
     const question = localize(
         'rename {0} to {1}',
-        '"{0}" was renamed to "{1}" on filesystem. Rename in fossil repository too?',
+        '"{0}" was renamed to "{1}" on filesystem. Rename in Zit repository too?',
         oldPath,
         newPath
     );
@@ -272,7 +245,7 @@ export async function confirmRename(
     return answer === 'Yes';
 }
 
-export async function inputRepoUrl(this: void): Promise<FossilURI | undefined> {
+export async function inputRepoUrl(this: void): Promise<ZitURI | undefined> {
     const url = await window.showInputBox({
         value: lastUsedRepoUrl,
         valueSelection: [lastUsedRepoUrl.indexOf('//') + 2, 99999],
@@ -280,63 +253,29 @@ export async function inputRepoUrl(this: void): Promise<FossilURI | undefined> {
         ignoreFocusOut: true,
     });
     if (url) {
-        lastUsedRepoUrl = url;
-        return Uri.parse(url) as FossilURI;
+        const uri = Uri.parse(url) as ZitURI;
+        const authority = uri.authority.replace(/^([^:@]+):[^@]*@/, '$1@');
+        lastUsedRepoUrl = uri.with({ authority }).toString();
+        return uri;
     }
     return undefined;
 }
 
 export async function inputPrompt(
-    stdout: FossilStdOut,
-    args: FossilArgsWithOptions
+    stdout: ZitStdOut,
+    args: ZitArgsWithOptions
 ): Promise<string | undefined> {
-    const title = 'Fossil Request';
-    const panel = window.createWebviewPanel(
-        'inputPrompt',
-        title,
-        ViewColumn.One
-    );
-    function escapeHtml(text: string): string {
-        const map: Record<string, string> = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;',
-        };
-        return text.replace(/[&<>"']/g, function (m) {
-            return map[m];
-        });
-    }
-    panel.webview.html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${title}</title>
-</head>
-<body style="padding-top:3em">
-<pre><b>${args.map(escapeHtml).join(' ')}</b>:
-${escapeHtml(stdout)}
-</pre></body></html>`;
     const lines = stdout.split('\n');
-    const resp = await window.showInputBox({
+    return window.showInputBox({
+        title: `Zit: ${args[0] ?? 'command'}`,
         prompt: lines[lines.length - 1],
         ignoreFocusOut: true,
     });
-    panel.dispose();
-    return resp;
 }
 
 async function inputCommon<TRet extends string = string>(
     this: void,
-    key:
-        | 'repourl'
-        | 'project name'
-        | 'project description'
-        | 'technote comment'
-        | 'wiki entry'
-        | 'commit hash',
+    key: 'repourl' | 'commit hash',
     message: string,
     extra: InputBoxOptions = {}
 ): Promise<TRet | undefined> {
@@ -345,68 +284,6 @@ async function inputCommon<TRet extends string = string>(
         ignoreFocusOut: true,
         ...extra,
     }) as Thenable<TRet | undefined>;
-}
-
-export async function inputProjectName(
-    this: void
-): Promise<FossilProjectName | undefined> {
-    return inputCommon<FossilProjectName>('project name', 'Project Name', {
-        placeHolder: 'Leave empty to not set Project Name',
-    });
-}
-
-export async function inputProjectDescription(
-    this: void
-): Promise<FossilProjectDescription | undefined> {
-    return inputCommon<FossilProjectDescription>(
-        'project description',
-        'Project Description',
-        {
-            placeHolder: 'Leave empty to not set Project Description',
-        }
-    );
-}
-
-export async function inputWikiComment(
-    this: void,
-    what: 'Technote' | 'Wiki'
-): Promise<FossilWikiTitle | undefined> {
-    switch (what) {
-        case 'Technote':
-            return inputCommon<FossilWikiTitle>(
-                'technote comment',
-                'Timeline comment of the technote'
-            );
-        case 'Wiki':
-            return inputCommon<FossilWikiTitle>(
-                'wiki entry',
-                'Name of the wiki entry'
-            );
-    }
-}
-
-export async function inputPatchCreate(): Promise<UserPath | undefined> {
-    const uri = await window.showSaveDialog({
-        defaultUri: suggestPath('patch.fossilpatch'),
-        saveLabel: localize('Create', 'Create'),
-        title: localize('new binary path', 'Create binary patch'),
-    });
-    return uri?.fsPath as UserPath | undefined;
-}
-
-export async function inputPatchApply(
-    this: void
-): Promise<UserPath | undefined> {
-    const uris = await window.showOpenDialog({
-        defaultUri: suggestPath('patch.fossilpatch'),
-        canSelectMany: false,
-        openLabel: localize('Apply', 'Apply'),
-        title: localize('apply binary patch', 'Apply binary patch'),
-    });
-    if (uris?.length == 1) {
-        return uris[0].fsPath as UserPath;
-    }
-    return undefined;
 }
 
 class PathPickItem implements QuickPickItem {
@@ -427,7 +304,7 @@ export async function selectNewFileLocation(
         alwaysShow: true,
     };
     const separator: QuickPickItem = {
-        label: 'Extras',
+        label: 'Untracked Files',
         kind: QuickPickItemKind.Separator,
     };
     const title = localize(
@@ -457,28 +334,9 @@ export async function selectNewFileLocation(
     return (selection as PathPickItem | undefined)?.path;
 }
 
-export async function selectFossilRootPath(
-    this: void
-): Promise<FossilRoot | undefined> {
-    const defaultUri = workspace.workspaceFolders
-        ? workspace.workspaceFolders[0].uri
-        : undefined;
-    const uri = await window.showOpenDialog({
-        defaultUri: defaultUri,
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        title: localize('root_directory', 'Select Fossil Root Directory'),
-    });
-    if (uri?.length) {
-        return uri[0].fsPath as FossilRoot;
-    }
-    return;
-}
-
 export async function inputCloneUser(
     this: void
-): Promise<FossilUsername | undefined> {
+): Promise<ZitUsername | undefined> {
     const value = lastUsedUser || typedConfig.username || process.env.USER;
     const user = await window.showInputBox({
         prompt: localize('username', 'Username'),
@@ -487,190 +345,83 @@ export async function inputCloneUser(
         value,
     });
     lastUsedUser = user;
-    return user as FossilUsername | undefined;
+    return user as ZitUsername | undefined;
 }
 
 export async function inputClonePassword(
     this: void
-): Promise<FossilPassword | undefined> {
+): Promise<ZitPassword | undefined> {
     const auth = await window.showInputBox({
         prompt: localize('user authentication', 'User Authentication'),
         placeHolder: localize('password', 'Password. Leave empty for none'),
         password: true,
         ignoreFocusOut: true,
     });
-    return auth as FossilPassword | undefined;
-}
-
-export async function warnBranchAlreadyExists(
-    name: FossilBranch
-): Promise<BranchExistsAction> {
-    const updateTo = localize('update', '&&Update');
-    const reopen = localize('reopen', '&&Re-open');
-    const message = localize(
-        'branch already exists',
-        "Branch '{0}' already exists. Update or Re-open?",
-        name
-    );
-    const choice = await window.showWarningMessage(
-        message,
-        { modal: true },
-        updateTo,
-        reopen
-    );
-    if (choice === reopen) {
-        return BranchExistsAction.Reopen;
-    } else if (choice === updateTo) {
-        return BranchExistsAction.UpdateTo;
-    }
-    return BranchExistsAction.None;
+    return auth as ZitPassword | undefined;
 }
 
 export async function inputNewBranchOptions(
     this: void
 ): Promise<NewBranchOptions | undefined> {
-    const inputBox = window.createInputBox();
-    inputBox.ignoreFocusOut = true;
-    const colorBtn: QuickInputButton = {
-        iconPath: new ThemeIcon('symbol-color'),
-        tooltip: 'Set Branch Color',
-    };
-    const privateBtn: QuickInputButton = {
-        iconPath: new ThemeIcon('eye'),
-        tooltip: 'Make Branch Private',
-    };
-    const publicBtn: QuickInputButton = {
-        iconPath: new ThemeIcon('eye-closed'),
-        tooltip: 'Make Branch public',
-    };
-    let color: FossilColor | '' = '';
-    let curBranch = '';
-    const askBranch = () => {
-        inputBox.value = curBranch;
-        inputBox.placeholder = localize('branch name', 'Branch name');
-        inputBox.prompt = localize(
-            'provide branch name',
-            'Please provide a branch name'
-        );
-        inputBox.validationMessage = '';
-        inputBox.buttons = [colorBtn, privateBtn];
-    };
-    askBranch();
-    const cssColors = (
-        'aqua|black|blue|fuchsia|gray|green|lime|' +
-        'maroon|navy|olive|orange|purple|red' +
-        '|silver|teal|white|yellow|aliceblue' +
-        '|antiquewhite|aquamarine|azure|beige' +
-        '|bisque|blanchedalmond|blueviolet|brown' +
-        '|burlywood|cadetblue|chartreuse|chocolate' +
-        '|coral|cornflowerblue|cornsilk|crimson' +
-        '|cyan|darkblue|darkcyan|darkgoldenrod' +
-        '|darkgray|darkgreen|darkgrey|darkkhaki' +
-        '|darkmagenta|darkolivegreen|darkorange' +
-        '|darkorchid|darkred|darksalmon|darkseagreen' +
-        '|darkslateblue|darkslategray|darkslategrey' +
-        '|darkturquoise|darkviolet|deeppink' +
-        '|deepskyblue|dimgray|dimgrey|dodgerblue' +
-        '|firebrick|floralwhite|forestgreen' +
-        '|gainsboro|ghostwhite|gold|goldenrod' +
-        '|greenyellow|grey|honeydew|hotpink|indianred' +
-        '|indigo|ivory|khaki|lavender|lavenderblush' +
-        '|lawngreen|lemonchiffon|lightblue|lightcoral' +
-        '|lightcyan|lightgoldenrodyellow|lightgray' +
-        '|lightgreen|lightgrey|lightpink|lightsalmon' +
-        '|lightseagreen|lightskyblue|lightslategray' +
-        '|lightslategrey|lightsteelblue|lightyellow' +
-        '|limegreen|linen|magenta|mediumaquamarine' +
-        '|mediumblue|mediumorchid|mediumpurple' +
-        '|mediumseagreen|mediumslateblue' +
-        '|mediumspringgreen|mediumturquoise' +
-        '|mediumvioletred|midnightblue|mintcream' +
-        '|mistyrose|moccasin|navajowhite|oldlace' +
-        '|olivedrab|orangered|orchid|palegoldenrod' +
-        '|palegreen|paleturquoise|palevioletred' +
-        '|papayawhip|peachpuff|peru|pink|plum' +
-        '|powderblue|rebeccapurple|rosybrown' +
-        '|royalblue|saddlebrown|salmon|sandybrown' +
-        '|seagreen|seashell|sienna|skyblue|slateblue' +
-        '|slategray|slategrey|snow|springgreen' +
-        '|steelblue|tan|thistle|tomato|transparent' +
-        '|turquoise|violet|wheat|whitesmoke' +
-        '|yellowgreen'
-    ).split('|');
-    const isValidColor = (value: string) =>
-        !value ||
-        /^#[0-9a-f]{6}$/i.test(value) ||
-        cssColors.includes(value.toLowerCase());
-
-    const branch = await new Promise<FossilBranch | undefined>(resolve => {
-        inputBox.onDidChangeValue(value => {
-            inputBox.validationMessage =
-                inputBox.buttons.length || isValidColor(value)
-                    ? ''
-                    : 'color format: #RRGGBB';
-        });
-        inputBox.onDidAccept(() => {
-            if (!inputBox.buttons.length) {
-                const value = inputBox.value as FossilColor;
-                color = isValidColor(value) ? value : '';
-                askBranch();
-            } else {
-                resolve(inputBox.value as FossilBranch);
-            }
-        });
-        inputBox.onDidHide(() => resolve(undefined));
-        inputBox.onDidTriggerButton(btn => {
-            switch (btn) {
-                case colorBtn:
-                    curBranch = inputBox.value;
-                    inputBox.value = color;
-                    inputBox.prompt = localize(
-                        'provide color',
-                        'Please color in #RRGGBB format'
-                    );
-                    inputBox.placeholder = localize(
-                        'branch color',
-                        'Branch color'
-                    );
-                    inputBox.buttons = [];
-                    break;
-                case privateBtn:
-                    inputBox.buttons = [colorBtn, publicBtn];
-                    break;
-                case publicBtn:
-                    inputBox.buttons = [colorBtn, privateBtn];
-                    break;
-            }
-        });
-        inputBox.show();
+    const branch = await window.showInputBox({
+        placeHolder: localize('branch name', 'Branch name'),
+        prompt: localize('provide branch name', 'Please provide a branch name'),
+        ignoreFocusOut: true,
+        validateInput: value =>
+            value.trim()
+                ? undefined
+                : localize('branch required', 'Branch name is required'),
     });
-    inputBox.dispose();
-    if (branch) {
-        return {
-            branch,
-            color,
-            isPrivate: inputBox.buttons.includes(publicBtn),
-        };
-    }
-    return;
+    return branch ? { branch: branch as ZitBranch } : undefined;
+}
+
+export async function inputTagName(this: void): Promise<ZitTag | undefined> {
+    const tag = await window.showInputBox({
+        placeHolder: localize('tag name', 'Tag name'),
+        prompt: localize('provide tag name', 'Please provide a tag name'),
+        ignoreFocusOut: true,
+        validateInput: value =>
+            value.trim()
+                ? undefined
+                : localize('tag required', 'Tag name is required'),
+    });
+    return tag ? (tag as ZitTag) : undefined;
 }
 
 export async function pickBranch(
     branches: BranchDetails[],
     placeHolder: string
-): Promise<FossilBranch | undefined> {
+): Promise<ZitBranch | undefined> {
     const headChoices = branches.map(head => new BranchItem(head));
     const choice = await window.showQuickPick(headChoices, { placeHolder });
     return choice?.checkin;
 }
 
-export async function pickUpdateCheckin(
-    refs: [BranchDetails[], FossilTag[]]
-): Promise<FossilCheckin | undefined> {
+export async function pickTag(
+    tags: ZitTag[],
+    placeHolder: string
+): Promise<ZitTag | undefined> {
+    const choice = await window.showQuickPick(
+        tags.map(tag => new TagItem(tag)),
+        { placeHolder }
+    );
+    return choice?.checkin;
+}
+
+interface PickCheckinOptions {
+    readonly placeHolder?: string;
+    readonly inputLabel?: string;
+    readonly inputPrompt?: string;
+}
+
+export async function pickCheckin(
+    refs: [BranchDetails[], ZitTag[]],
+    options: PickCheckinOptions = {}
+): Promise<ZitCheckin | undefined> {
     const branches = refs[0].map(ref => new BranchItem(ref));
     const tags = refs[1].map(ref => new TagItem(ref));
     const picks = [
-        new UserInputItem(),
+        new UserInputItem(options.inputLabel, options.inputPrompt),
         {
             kind: QuickPickItemKind.Separator,
             label: '',
@@ -683,9 +434,10 @@ export async function pickUpdateCheckin(
         ...tags,
     ];
 
-    let result: CheckinItem<FossilCheckin> | RunnableQuickPickItem | undefined =
+    let result: CheckinItem<ZitCheckin> | RunnableQuickPickItem | undefined =
         await window.showQuickPick(picks, {
-            placeHolder: 'Select a branch/tag to update to:',
+            placeHolder:
+                options.placeHolder ?? 'Select a branch/tag to update to:',
             matchOnDescription: true,
         });
     while (result) {
@@ -740,6 +492,20 @@ export async function presentLogSourcesMenu(
     }
 }
 
+export async function presentCommit(
+    commands: InteractionAPI,
+    checkin: ZitCheckin
+): Promise<void> {
+    const details = await commands.getCommitDetails(checkin);
+    const close = asBackItem(localize('timeline', 'timeline'), () =>
+        Promise.resolve(undefined)
+    );
+    let result = await presentCommitDetails(details, close, commands);
+    while (result) {
+        result = await result.run();
+    }
+}
+
 async function pickCommitAsShowCommitDetailsRunnable(
     source: CommitSources,
     entries: Commit[],
@@ -756,7 +522,7 @@ async function pickCommitAsShowCommitDetailsRunnable(
                 back
             )
     );
-    const commitPickedActionFactory = (checkin: FossilCheckin) => async () => {
+    const commitPickedActionFactory = (checkin: ZitCheckin) => async () => {
         const details = await commands.getCommitDetails(checkin);
         return presentCommitDetails(details, backhere, commands);
     };
@@ -782,7 +548,7 @@ async function pickCommitAsShowCommitDetailsRunnable(
 export async function pickCommit(
     source: CommitSources,
     commits: Commit[],
-    action: (commit: FossilCheckin) => RunnableAction,
+    action: (commit: ZitCheckin) => RunnableAction,
     backItem?: RunnableQuickPickItem
 ): Promise<RunnableQuickPickItem | undefined> {
     const logEntryPickItems: RunnableQuickPickItem[] = commits.map(
@@ -810,7 +576,7 @@ export async function pickCommit(
 
 export async function pickCommitToCherrypick(
     logEntries: Commit[]
-): Promise<FossilHash | undefined> {
+): Promise<ZitHash | undefined> {
     const logEntryPickItems = logEntries.map(
         entry => new TimelineEntryItem(entry)
     );
@@ -825,7 +591,7 @@ export async function pickCommitToCherrypick(
 
 export async function pickStashItem(
     items: StashItem[],
-    operation: 'drop' | 'apply'
+    operation: 'show' | 'drop' | 'apply' | 'pop'
 ): Promise<StashID | undefined> {
     const stashItems = items.map(entry => new StashEntryItem(entry));
     const placeHolder = localize(
@@ -841,7 +607,7 @@ export async function pickStashItem(
 }
 
 /**
- * use selected commit in 'fossil.log' command
+ * Use the selected commit in the `zit.log` command.
  */
 async function presentCommitDetails(
     details: CommitDetails,
@@ -850,7 +616,7 @@ async function presentCommitDetails(
 ): Promise<RunnableQuickPickItem | undefined> {
     const placeHolder = describeCommitOneLine(details);
     const diff = (status: FileStatus) =>
-        commands.diffToParent(status.path, details.hash);
+        commands.diffToParent(status.path, details.hash, status.status);
     const filePickItems = details.files.map(
         f => new FileStatusQuickPickItem(f, () => diff(f))
     );
@@ -884,8 +650,7 @@ async function presentCommitDetails(
         changesLabel,
         ...filePickItems,
     ] satisfies (
-        | RunnableQuickPickItem
-        | { kind: QuickPickItemKind.Separator }
+        RunnableQuickPickItem | { kind: QuickPickItemKind.Separator }
     )[];
 
     const choice = await window.showQuickPick(items, {
@@ -895,6 +660,51 @@ async function presentCommitDetails(
     });
 
     return choice as RunnableQuickPickItem;
+}
+interface WorktreeQuickPickItem extends QuickPickItem {
+    readonly worktree: ZitWorktree;
+}
+
+export async function pickWorktree(
+    worktrees: ZitWorktree[]
+): Promise<ZitWorktree | undefined> {
+    if (!worktrees.length) {
+        await window.showInformationMessage(
+            localize(
+                'no registered worktrees',
+                'There are no registered Zit worktrees.'
+            )
+        );
+        return undefined;
+    }
+
+    const item = await window.showQuickPick<WorktreeQuickPickItem>(
+        worktrees.map(worktree => ({
+            label: `$(folder) ${path.basename(worktree.path) || worktree.path}`,
+            description: worktree.isCurrent
+                ? localize('current worktree', 'Current worktree')
+                : undefined,
+            detail: `${worktree.path} • ${
+                worktree.branch
+                    ? `${worktree.branch} • ${
+                          worktree.checkin ??
+                          localize('unborn checkout', 'Unborn checkout')
+                      }`
+                    : localize(
+                          'checkout state unavailable',
+                          'Checkout state unavailable'
+                      )
+            }`,
+            worktree,
+        })),
+        {
+            placeHolder: localize(
+                'select registered worktree',
+                'Select a registered Zit worktree'
+            ),
+        }
+    );
+    return item?.worktree;
 }
 
 async function editCommitMessage(
@@ -919,9 +729,7 @@ async function editCommitMessage(
 
 export async function pickDiffAction(
     commits: Commit[],
-    diffAction: (
-        to: FossilHash | FossilSpecialTags | undefined
-    ) => RunnableAction,
+    diffAction: (to: ZitHash | ZitSpecialTags | undefined) => RunnableAction,
     backAction: RunnableAction
 ): Promise<void> {
     const items = [
@@ -933,13 +741,13 @@ export async function pickDiffAction(
         ),
         new LiteralRunnableQuickPickItem(
             '$(tag) Current',
-            'special fossil tag',
+            'special Zit tag',
             'Show difference with the current checked-out version ',
             diffAction('current')
         ),
         new LiteralRunnableQuickPickItem(
             '$(tag) Tip',
-            'special fossil tag',
+            'special Zit tag',
             'Show difference with the most recent check-in',
             diffAction('tip')
         ),
@@ -978,46 +786,83 @@ export async function pickDiffAction(
         await choice.run();
     }
 }
-
-interface RemoteQuickPickItem extends QuickPickItem {
-    readonly uri: FossilURI;
-}
-
-export async function pickRemote(
-    remotes: FossilRemote[],
-    what: 'push to' | 'pull from'
-): Promise<FossilRemoteName | undefined> {
-    if (remotes.length == 1) {
-        return remotes[0].name;
-    }
-    const picks = remotes.map(
-        (remote): RemoteQuickPickItem & { name: FossilRemoteName } => ({
-            label: `$(link) ${remote.name}`,
-            name: remote.name,
-            detail: remote.uri.toString(),
-            uri: remote.uri,
-        })
-    );
-    const placeHolder = localize('pick remote', 'Pick a remote to {0}:', what);
-    const choice = await window.showQuickPick(picks, {
-        placeHolder,
-        matchOnDetail: true,
+export async function inputRemoteUrl(
+    defaultUrl?: ZitURI
+): Promise<ZitURI | undefined> {
+    const value = await window.showInputBox({
+        prompt: localize('remote URL', 'Remote URL'),
+        value: defaultUrl?.toString() ?? lastUsedRepoUrl,
+        ignoreFocusOut: true,
+        validateInput: input => {
+            let url: URL;
+            try {
+                url = new URL(input);
+            } catch {
+                return localize(
+                    'remote protocol',
+                    'Remote URL must use HTTP or HTTPS'
+                );
+            }
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                return localize(
+                    'remote protocol',
+                    'Remote URL must use HTTP or HTTPS'
+                );
+            }
+            if (url.username || url.password) {
+                return localize(
+                    'remote credentials',
+                    'Do not put credentials in the remote URL'
+                );
+            }
+            return undefined;
+        },
     });
-    return choice?.name;
+    if (!value) {
+        return undefined;
+    }
+    lastUsedRepoUrl = value;
+    return Uri.parse(value) as ZitURI;
 }
 
-export function warnUnsavedChanges(msg: string): void {
-    window.showWarningMessage(localize('unsaved changes', `Fossil: ${msg}`));
+export async function inputSyncCredentials(): Promise<
+    SyncCredentials | null | undefined
+> {
+    const username = await window.showInputBox({
+        prompt: localize(
+            'sync username',
+            'Remote username (leave empty for anonymous access)'
+        ),
+        value: lastUsedSyncUser,
+        ignoreFocusOut: true,
+    });
+    if (username === undefined) {
+        return undefined;
+    }
+    if (!username) {
+        return null;
+    }
+    const password = await window.showInputBox({
+        prompt: localize('sync password', 'Remote password'),
+        password: true,
+        ignoreFocusOut: true,
+    });
+    if (password === undefined) {
+        return undefined;
+    }
+    lastUsedSyncUser = username;
+    return {
+        username: username as ZitUsername,
+        password: password as ZitPassword,
+    };
 }
 
 export async function confirmUndoOrRedo(
-    command: 'undo' | 'redo',
-    command_text: FossilUndoCommand
+    command: 'undo' | 'redo'
 ): Promise<boolean> {
     const confirmText = command[0].toUpperCase() + command.slice(1);
-    const message = localize(command, `${confirmText} '{0}'?`, command_text);
     const choice = await window.showInformationMessage(
-        message,
+        localize(command, `${confirmText} the last working-tree operation?`),
         { modal: true },
         confirmText
     );
@@ -1025,8 +870,8 @@ export async function confirmUndoOrRedo(
 }
 
 export async function inputCommitMessage(
-    defaultMessage?: FossilCommitMessage
-): Promise<FossilCommitMessage | undefined> {
+    defaultMessage?: ZitCommitMessage
+): Promise<ZitCommitMessage | undefined> {
     return window.showInputBox({
         value: defaultMessage,
         placeHolder: localize('commit message', 'Commit message'),
@@ -1035,22 +880,26 @@ export async function inputCommitMessage(
             'Please provide a commit message'
         ),
         ignoreFocusOut: true,
-    }) as Promise<FossilCommitMessage | undefined>;
+    }) as Promise<ZitCommitMessage | undefined>;
 }
 
 export async function confirmDiscardAllChanges(
     this: void,
-    where: string
+    where: string,
+    groupCount: number
 ): Promise<boolean> {
-    // `where` can be
-    // * "Changes"
-    // * "Unresolved Conflicts"
-    // * "Changes" and "Unresolved Conflicts"
-    const message = localize(
-        'confirm discard all',
-        'Are you sure you want to discard changes in {0} group?',
-        where
-    );
+    const message =
+        groupCount === 1
+            ? localize(
+                  'confirm discard all',
+                  'Are you sure you want to discard changes in {0} group?',
+                  where
+              )
+            : localize(
+                  'confirm discard all multiple groups',
+                  'Are you sure you want to discard changes in {0} groups?',
+                  where
+              );
     const discard = localize('discard', '&&Discard Changes');
     const choice = await window.showWarningMessage(
         message,
@@ -1060,48 +909,29 @@ export async function confirmDiscardAllChanges(
     return choice === discard;
 }
 
-export async function confirmDeleteExtras(this: void): Promise<boolean> {
-    const message = localize(
-        'confirm delete extras',
-        'Are you sure you want to delete untracked and unignored files?'
-    );
-    const discard = localize('discard', '&&Delete Extras');
-    const choice = await window.showWarningMessage(
-        message,
-        { modal: true },
-        discard
-    );
-    return choice === discard;
-}
-
-export async function confirmDeleteResources(
+export async function confirmMoveResourcesToTrash(
     this: void,
     paths: string[]
 ): Promise<boolean> {
-    let message: string;
-    let yes: string;
-    if (paths.length == 1) {
-        message = localize(
-            'confirm delete',
-            'Are you sure you want to DELETE {0}?\nThis is IRREVERSIBLE!\nThis file will be FOREVER LOST if you proceed.',
-            path.basename(paths[0])
-        );
-        yes = localize('delete file', '&&Delete file');
-    } else {
-        message = localize(
-            'confirm delete multiple',
-            'Are you sure you want to DELETE {0} files?\nThis is IRREVERSIBLE!\nThese files will be FOREVER LOST if you proceed.',
-            paths.length
-        );
-        yes = localize('delete files', '&&Delete Files');
-    }
-
+    const message =
+        paths.length === 1
+            ? localize(
+                  'confirm move to trash',
+                  'Move {0} to the Trash?',
+                  path.basename(paths[0])
+              )
+            : localize(
+                  'confirm move multiple to trash',
+                  'Move {0} untracked resources to the Trash?',
+                  paths.length
+              );
+    const move = localize('move to trash', '&&Move to Trash');
     const choice = await window.showWarningMessage(
         message,
         { modal: true },
-        yes
+        move
     );
-    return choice === yes;
+    return choice === move;
 }
 
 export async function confirmDiscardChanges(
@@ -1153,49 +983,6 @@ export async function confirmDiscardChanges(
     return choice === discard;
 }
 
-export async function confirmDeleteMissingFilesForCommit(
-    filenames: string[]
-): Promise<boolean> {
-    let message: string;
-    if (filenames.length === 1) {
-        message = localize(
-            'confirm delete missing',
-            "Did you want to delete '{0}' in this commit?",
-            path.basename(filenames[0])
-        );
-    } else {
-        const fileList = humanise.formatFilesAsBulletedList(filenames);
-        message = localize(
-            'confirm delete missing multiple',
-            'Did you want to delete {0} missing files in this commit?\n\n{1}',
-            filenames.length,
-            fileList
-        );
-    }
-
-    const deleteOption = localize('delete', '&&Delete');
-    const choice = await window.showWarningMessage(
-        message,
-        { modal: true },
-        deleteOption
-    );
-    return choice === deleteOption;
-}
-
-export async function confirmCommitWorkingGroup(): Promise<boolean> {
-    const message = localize(
-        'confirm commit working group',
-        'There are no staged changes, do you want to commit working changes?\n'
-    );
-    const respOpt = localize('confirm', 'C&&onfirm');
-    const choice = await window.showWarningMessage(
-        message,
-        { modal: true },
-        respOpt
-    );
-    return choice === respOpt;
-}
-
 export async function confirmGitExport(): Promise<boolean> {
     const fromConfig = typedConfig.gitExport;
     if (fromConfig == 'Automatically') {
@@ -1219,30 +1006,6 @@ export async function confirmGitExport(): Promise<boolean> {
     }
     await typedConfig.setGitExport(answer);
     return answer == 'Automatically';
-}
-
-export async function inputWikiType(): Promise<
-    'Technote' | 'Wiki' | undefined
-> {
-    const choice = await window.showQuickPick(['Technote', 'Wiki'], {
-        title: 'Create',
-    });
-    return choice as 'Technote' | 'Wiki' | undefined;
-}
-
-export async function inputSavePath(
-    uri: Uri,
-    renderer: 'pikchr' | 'markdown' | 'wiki'
-): Promise<Uri | undefined> {
-    const info = path.parse(uri.fsPath);
-    const filename = `${info.name}${renderer === 'pikchr' ? '.svg' : '.html'}`;
-    const defaultUri = info.dir
-        ? Uri.file(path.join(info.dir, filename))
-        : suggestPath(filename);
-    return window.showSaveDialog({
-        defaultUri,
-        title: 'Save Preview',
-    });
 }
 
 abstract class RunnableQuickPickItem implements QuickPickItem {
@@ -1274,15 +1037,15 @@ class TimelineEntryItem extends RunnableQuickPickItem {
 
 class StashEntryItem implements QuickPickItem {
     constructor(public item: StashItem) {}
-    protected get age(): string {
-        return humanise.ageFromNow(this.item.date);
-    }
     get label(): string {
         const hash = this.item.hash.slice(0, SHORT_HASH_LENGTH);
         return `$(circle-outline) ${this.item.stashId} • ${hash}`;
     }
     get description(): string {
-        return `$(calendar) ${this.age}`;
+        const files = `${this.item.fileCount} file(s)`;
+        return this.item.date
+            ? `${files} • $(calendar) ${humanise.ageFromNow(this.item.date)}`
+            : files;
     }
     get detail(): string {
         return this.item.comment;
@@ -1290,7 +1053,10 @@ class StashEntryItem implements QuickPickItem {
 }
 
 class RunnableTimelineEntryItem extends TimelineEntryItem {
-    constructor(commit: Commit, private action: RunnableAction) {
+    constructor(
+        commit: Commit,
+        private action: RunnableAction
+    ) {
         super(commit);
     }
     override run() {
@@ -1298,18 +1064,18 @@ class RunnableTimelineEntryItem extends TimelineEntryItem {
     }
 }
 
-class CheckinItem<T extends FossilCheckin> {
+class CheckinItem<T extends ZitCheckin> {
     constructor(public readonly checkin: T) {}
 }
 
-class BranchItem extends CheckinItem<FossilBranch> implements QuickPickItem {
+class BranchItem extends CheckinItem<ZitBranch> implements QuickPickItem {
     get label(): string {
         return `$(git-branch) ${this.checkin}`;
     }
     get description(): string {
         return [
             ...(this.branch.isCurrent ? ['current'] : []),
-            ...(this.branch.isPrivate ? ['private'] : []),
+            ...(this.branch.isClosed ? ['closed'] : []),
         ].join(', ');
     }
     constructor(private branch: BranchDetails) {
@@ -1317,7 +1083,7 @@ class BranchItem extends CheckinItem<FossilBranch> implements QuickPickItem {
     }
 }
 
-class TagItem extends CheckinItem<FossilTag> implements QuickPickItem {
+class TagItem extends CheckinItem<ZitTag> implements QuickPickItem {
     get label(): string {
         return `$(tag) ${this.checkin}`;
     }
@@ -1334,16 +1100,15 @@ class FileStatusQuickPickItem extends RunnableQuickPickItem {
         return path.dirname(this.status.path);
     }
     get icon(): string {
-        switch (this.status.status) {
-            case ResourceStatus.ADDED:
-                return 'Ａ'; //'$(diff-added)';
-            case ResourceStatus.MODIFIED:
-                return 'Ｍ'; //'$(diff-modified)';
-            case ResourceStatus.DELETED:
-                return 'Ｒ'; //'$(diff-removed)';
-            default:
-                return '';
-        }
+        return (
+            {
+                [ResourceStatus.ADDED]: 'A', // $(diff-added)
+                [ResourceStatus.EXTRA]: 'A', // $(diff-added)
+                [ResourceStatus.MODIFIED]: 'M', // $(diff-modified)
+                [ResourceStatus.DELETED]: 'R', // $(diff-removed)
+                [ResourceStatus.MISSING]: 'R', // $(diff-removed)
+            }[this.status.status] ?? ''
+        );
     }
 
     constructor(
@@ -1378,12 +1143,19 @@ class LiteralRunnableQuickPickItem extends RunnableQuickPickItem {
 
 class UserInputItem extends RunnableQuickPickItem implements QuickPickItem {
     readonly alwaysShow = true;
-    readonly label = '$(pencil) Checkout by hash';
+    readonly label: string;
 
-    async run(): Promise<CheckinItem<FossilCheckin> | undefined> {
-        const userInput = await inputCommon<FossilCheckin>(
+    constructor(
+        label = '$(pencil) Checkout by hash',
+        private readonly prompt = 'Enter hash/check-in/tag to update to'
+    ) {
+        super();
+        this.label = label;
+    }
+    async run(): Promise<CheckinItem<ZitCheckin> | undefined> {
+        const userInput = await inputCommon<ZitCheckin>(
             'commit hash',
-            'Enter hash/check-in/tag to update to',
+            this.prompt,
             { placeHolder: 'hash/check-in/tag' }
         );
         if (userInput) {
@@ -1396,12 +1168,16 @@ class UserInputItem extends RunnableQuickPickItem implements QuickPickItem {
 type RunnableReturnType = Promise<any> | void;
 export type RunnableAction = () => RunnableReturnType;
 export interface InteractionAPI {
-    get currentBranch(): FossilBranch | undefined;
-    getCommitDetails(revision: FossilCheckin): Promise<CommitDetails>;
+    get currentBranch(): ZitBranch | undefined;
+    getCommitDetails(revision: ZitCheckin): Promise<CommitDetails>;
     getLogEntries(options: LogEntriesOptions): Promise<Commit[]>;
-    diffToParent(filePath: string, commit: FossilCheckin): Promise<void>;
+    diffToParent(
+        filePath: string,
+        commit: ZitCheckin,
+        status?: ResourceStatus
+    ): Promise<void>;
     updateCommitMessage(
-        hash: FossilHash,
-        new_commit_message: FossilCommitMessage
+        hash: ZitHash,
+        new_commit_message: ZitCommitMessage
     ): Promise<void>;
 }

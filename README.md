@@ -1,161 +1,96 @@
-# Integrated Fossil source control for Visual Studio Code
+# Zit source control for Visual Studio Code
 
-### Prerequisites
+This extension integrates [Zit](https://fossil.craftdesign.group/zit/home) repositories with Visual Studio Code.
 
-> This extension leverages your machine's Fossil installation,
-so you need to
-[install Fossil](https://www.fossil-scm.org/fossil/doc/trunk/www/quickstart.wiki)
-first. Also read the [cloning](/docs/cloning.md) documentation for info
-about cloning from the extension.
+## Requirements
 
-![Fossil](images/fossil.png)
+Install a current `zit` executable and make it available on `PATH`, or set `zit.path` to its absolute path. Official binaries and source archives are available from the [Zit download page](https://fossil.craftdesign.group/zit/uv/download.html).
 
-# Features
+The extension discovers a checkout by walking upward from each workspace folder until it finds the regular `.zit-checkout` file. A checkout initialized in its own repository also has a `.zit` store; a detached worktree can use a store elsewhere and therefore has no local `.zit`.
 
-* Add files and commit from the source control panel
-  (i.e. where git normally appears).
+## Workflows
 
-* All the basics: commit, add, revert, update, push and pull.
+Open the Command Palette and search for `Zit:` to see the commands available in the current context.
 
-* See changes inline within text editor.
+### Create or open a checkout
 
-* Interactive log for basic file history and diff.
+- **Zit: Initialize Repository** runs `zit init` in a selected directory.
+- **Zit: Clone Repository** accepts the remote forms supported by Zit and opens the resulting checkout.
+- **Zit: Open Repository** opens an existing Zit repository in a selected directory.
+- Existing checkouts are discovered automatically when their folders are opened in VS Code.
 
-* Branch, merge, resolve files.
+### Work with changes
 
-* Praise
+The Source Control view has three groups:
 
-* Quickly switch branches, push and pull via status bar.
+- **Added Files** — files already tracked by Zit and added since the current check-in.
+- **Changes** — tracked files modified or removed in the working tree.
+- **Untracked Files** — files not tracked by Zit.
 
-* Supports named-branches workflows.
+Use the Source Control view or Command Palette to add files, forget files, inspect changes, revert changes, clean untracked files, and commit. Zit commits directly from the working tree: there is no staging area. A commit without selected paths records all tracked changes; resource commands can commit selected paths when the command supports it.
 
-* Automatic incoming/outgoing counters.
+Cleaning untracked resources previews the paths first, then moves confirmed files and directories to the operating-system Trash. If the Trash operation fails, Zit reports the error and does not fall back to permanent deletion.
 
-* Undo/Redo.
+Use **Update** to move the checkout to another check-in, branch, or tag. Merge and cherry-pick actions operate on the working tree and report conflicts without inventing a persistent conflict status group.
 
-* Preview `md`, `wiki` and `pikchr` files
+### History and inspection
 
-* Syntax highlighting for `pikchr` language
+The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files. Use **Compare Refs...** from the Command Palette, the Source Control **Timeline** menu, or a timeline check-in's **Compare with...** action to compare any branch, symbolic tag, or check-in in one multi-diff editor.
 
-* Use command palette `Ctrl-Shift-P` >> `fossil:` to see all commands. (Not everything has a UI control.)
+Run **Zit: Praise** from the Command Palette to show each committed line’s check-in, date, and author in the editor margin. Hover a line for the commit message and full metadata; run **Praise** again to hide the annotations.
 
+### Branches, tags, stashes, and remotes
 
-## View file changes
-![View changes](images/fossil-diff.gif)
+Supported workflows include:
 
-  * Click a file see the diff view
-  * Or open a file by using context menu
+- creating and switching branches;
+- listing, adding, and canceling symbolic tags, including repository-wide and per-check-in tag views;
+- saving, listing, applying, popping, and dropping stashes;
+- pull, push, and sync;
+- showing, setting, and clearing the repository's default remote;
+- exporting the repository to Git.
 
-## Initialize a new repo
+Replacing or clearing the saved remote requires confirmation. Remote URLs are limited to HTTP or HTTPS and cannot include embedded credentials.
 
-![Init a repo](images/init.gif)
+Private branches and mutating a checkout solely to close it are not exposed because Zit does not provide those operations.
 
-  * Just click the Fossil icon from the source control title area
-    * Follow prompts
+## Deliberately unsupported surfaces
 
-## Update to a branch/tag
+Zit has no staging area, so this extension has no stage, unstage, or “commit staged” commands. It also does not expose a web UI, patch commands, or wiki/technote creation and rendering. Collaboration artifacts may exist in the underlying Fossil-compatible protocol, but this extension does not interpret or edit them.
 
-![Change branches](images/change-branch.gif)
+## Settings
 
-  * The current branch name is shown in the bottom-left corner.
-  * Click it to see a list of branches and tags that you can update to.
+- `zit.path` — absolute path to the `zit` executable. Leave empty to search `PATH`.
+- `zit.autoRefresh` — refresh Source Control when workspace files change.
+- `zit.autoSyncInterval` — seconds between background sync operations; `0` disables them.
+- `zit.username` — author used for commits when an override is needed.
+- `zit.defaultUsername` — fallback author used when Zit does not supply one.
+- `zit.enableRenaming` — enable repository-aware rename actions.
+- `zit.confirmGitExport` — whether to run Git export after commits: `Automatically`, `Ask`, or `Never`.
+- `zit.globalArgs` — extra arguments passed to every Zit invocation.
+- `zit.commitArgs` — extra arguments passed to `zit commit`.
+- `zit.ignoreMissingZitWarning` — suppress the missing-executable warning.
 
-# How to
+Setting changes take effect without restarting VS Code unless VS Code marks the setting as machine-scoped.
 
-* **Checkout by hash?**
+## Troubleshooting
 
-  Use branch menu in the status bar.
+### Zit cannot be found
 
-* **Create a new branch?**
+Run `zit version` in the integrated terminal. If it succeeds there, reload the window. Otherwise install Zit or set `zit.path` to the executable.
 
-  Create a branch with "Commit Creating New Branch..." action in SCM menu or in command palette.
+### A repository is not detected
 
-* **Modify commit message?**
+Open a folder inside the checkout and confirm that `.zit-checkout` is a regular file in that folder or one of its parents. Initialized checkouts also have a local `.zit` store, while detached worktrees may not. Use **Zit: Open Repository** when you need to select a checkout explicitly.
 
-  Use "Fossil log" from command palette and navigate the options till specific checkout.
+### A command fails
 
-* **Get current checkout hash or tags?**
+Open **Zit: Show Output** to inspect the exact command, working directory, exit status, and diagnostic output. Credentials embedded in remote URLs are redacted from the output channel.
 
-  Hover over current branch name in the status bar
+## Development
 
-* **Close/reopen a branch?**
+The source distribution includes detailed guides for building, testing, packaging, command behavior, releases, and Pikchr grammar development.
 
-  Use 'Close branch...' and 'Reopen branch...' actions from command palette.
+## Acknowledgements
 
-* **Commit partially**
-
-  1. Run `Stash Snapshot` command
-  2. Manually remove lines that you don't want in the commit
-  3. Make a commit
-  4. Run `Stash Pop`
-
-* **Blame**
-
-  Use `Fossil: praise` command from command palette
-
-# Settings
-
-`fossil.autoRefresh { boolean }`
-
-  * Enables automatic refreshing of Source Control tab and badge counter
-  when files within the project change:
-  `"true"` &mdash; enabled
-  `"false"` &mdash; disabled, manual refresh still available.
-
-`fossil.path { string }`
-
-  * Specifies an explicit `fossil` file path to use.
-  * This should only be used if `fossil` cannot be found automatically.
-  * The default behavior is to search for `fossil` on the PATH.
-  * Takes effect immediately.
-
-`fossil.username { string }`
-
-  * Specifies an explicit user to use for fossil commits (`--user-override`).
-  * This should only be used if the user is different than the fossil default user.
-  * Username could be passed with `fossil.commitArgs` but this is just convenient shortcut.
-
-`fossil.autoSyncInterval { number }`
-  * The duration, in seconds, between each background `fossil sync` operation.
-  * 0 to disable.
-
-`fossil.globalArgs`
-  * Extra arguments added to each `fossil` command (see `fossil help -o`)
-
-`fossil.commitArgs`
-  * Extra arguments added to `fossil commit` command (see `fossil help commit`)
-
-
-# Troubleshooting
-
-In general, Fossil designers maintain an abundance of
-[documentation](https://fossil-scm.org/home/doc/trunk/www/permutedindex.html).
-Reference that documentation as much as possible.
-
-| Issue | Resolution
---------|----------------------------------------------------------------
-| Unknown certificate authority | Read the [Fossil SSL Documentation](https://fossil-scm.org/home/doc/trunk/www/ssl.wiki#certs) to update fossil with the correct CA |
-| inputBox prompt difficult to read | Run the same fossil command on the built-in terminal (<code>Ctrl+`</code>). Unfortunately VS Code strips newlines and tabs from inputBox prompts. |
-
-
-# Feedback & Contributing
-
-* Please report any bugs, suggestions or documentation requests via the
-[Github issues](https://github.com/koog1000/vscode-fossil/issues)
-(_yes_, I see the irony).
-* Feel free to submit
-[pull requests](https://github.com/koog1000/vscode-fossil/pulls).
-
-
-### For developers
-
-* [Building and debugging](docs/dev/build.md)
-* [Api behavior](docs/dev/api.md)
-* [Releasing](docs/dev/release.md)
-
-# Acknowledgements
-
-[Ben Crowl](https://github.com/mrcrowl),
-[koog1000](https://github.com/koog1000),
-[senyai](https://github.com/senyai),
-[ajansveld](https://github.com/ajansveld), [hoffmael](https://github.com/hoffmael), [nioh-wiki](https://github.com/nioh-wiki), [joaomoreno](https://github.com/joaomoreno), [nsgundy](https://github.com/nsgundy)
+This project began as a port of the vscode-fossil extension. Thanks to its contributors: [Ben Crowl](https://github.com/mrcrowl), [koog1000](https://github.com/koog1000), [senyai](https://github.com/senyai), [ajansveld](https://github.com/ajansveld), [hoffmael](https://github.com/hoffmael), [nioh-wiki](https://github.com/nioh-wiki), [joaomoreno](https://github.com/joaomoreno), and [nsgundy](https://github.com/nsgundy).

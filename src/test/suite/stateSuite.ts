@@ -2,9 +2,10 @@ import { Uri, window, commands } from 'vscode';
 import * as sinon from 'sinon';
 import {
     assertGroups,
-    cleanupFossil,
+    cleanupZit,
     fakeExecutionResult,
-    fakeFossilStatus,
+    fakeStatusResult,
+    fakeZitStatus,
     fakeUpdateResult,
     getExecStub,
     getRepository,
@@ -12,174 +13,124 @@ import {
 import * as assert from 'assert/strict';
 import * as fs from 'fs/promises';
 import {
-    FossilCheckin,
-    FossilCommitMessage,
-    FossilRemoteName,
+    ZitCheckin,
+    ZitCommitMessage,
     OpenedRepository,
-    RelativePath,
     ResourceStatus,
     StashID,
 } from '../../openedRepository';
-import { Suite, after, before } from 'mocha';
-import { Reason } from '../../fossilExecutable';
+import { Suite, suiteTeardown, suiteSetup } from 'mocha';
+import { Reason } from '../../zitExecutable';
+
+function getOpenedRepository(): OpenedRepository {
+    const opened = Reflect.get(getRepository(), 'repository') as unknown;
+    assert.ok(opened instanceof OpenedRepository);
+    return opened;
+}
 
 function PullAndPushSuite(this: Suite): void {
-    const noRemotes = async (
-        command: 'fossil.pull' | 'fossil.push' | 'fossil.pushTo'
-    ) => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const listCall = execStub
-            .withArgs(['remote', 'list'])
-            .resolves(fakeExecutionResult({ stdout: '' }));
-        const sem = this.ctx.sandbox
-            .stub(window, 'showErrorMessage')
-            .resolves() as sinon.SinonStub;
+    const noRemote = async (command: 'zit.pull' | 'zit.push') => {
+        const exec = getExecStub(this.ctx.sandbox);
+        const remote = exec
+            .withArgs(['remote'])
+            .resolves(fakeExecutionResult({ stdout: 'no remote set\n' }));
+        const error = this.ctx.sandbox.stub(
+            window,
+            'showErrorMessage'
+        ) as sinon.SinonStub;
+        error.resolves(undefined);
+
         await commands.executeCommand(command);
-        sinon.assert.calledOnce(listCall);
+
+        sinon.assert.calledOnceWithExactly(remote, ['remote']);
         sinon.assert.calledOnceWithExactly(
-            sem,
+            error,
             'Your repository has no remotes configured.'
         );
     };
 
-    test('Pull no remotes', async () => {
-        await noRemotes('fossil.pull');
+    test('Pull with no saved remote', async () => {
+        await noRemote('zit.pull');
     });
 
-    test('Push no remotes', async () => {
-        await noRemotes('fossil.push');
+    test('Push with no saved remote', async () => {
+        await noRemote('zit.push');
     });
 
-    test('PushTo no remotes', async () => {
-        await noRemotes('fossil.pushTo');
-    });
-
-    before(() => {
-        const repository = getRepository();
-        assert.equal((repository.queue as any)._items.length, 0);
-    });
-
-    test('Pull', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const listCall = execStub
-            .withArgs(['remote', 'list'])
-            .resolves(
-                fakeExecutionResult({ stdout: 'default https://example.com\n' })
-            );
-        const sem = this.ctx.sandbox
-            .stub(window, 'showErrorMessage')
-            .resolves();
-        const pullCall = execStub
-            .withArgs(sinon.match.array.startsWith(['pull']))
-            .resolves();
-        await commands.executeCommand('fossil.pull');
-        sinon.assert.calledOnce(listCall);
-        sinon.assert.notCalled(sem);
-        sinon.assert.calledOnceWithExactly(pullCall, [
-            'pull',
-            'default' as FossilRemoteName,
-        ]);
-    });
-
-    test('Update', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const updateCall = execStub
-            .withArgs(['update'])
-            .resolves(fakeUpdateResult());
-
-        await commands.executeCommand('fossil.update');
-        sinon.assert.calledOnce(updateCall);
-    });
-
-    const oneRemote = async (command: 'fossil.push' | 'fossil.pushTo') => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const listCall = execStub
-            .withArgs(['remote', 'list'])
-            .resolves(
-                fakeExecutionResult({ stdout: 'default https://example.com\n' })
-            );
-        const pushCall = execStub
-            .withArgs(sinon.match.array.startsWith(['push']))
-            .resolves();
-        await commands.executeCommand(command);
-        sinon.assert.calledOnce(listCall);
-        return pushCall;
-    };
-
-    test('Push', async () => {
-        const pushCall = await oneRemote('fossil.push');
-        sinon.assert.calledOnceWithExactly(pushCall, ['push']);
-    });
-
-    test('PushTo (one remote)', async () => {
-        const pushCall = await oneRemote('fossil.pushTo');
-        sinon.assert.calledOnceWithExactly(pushCall, [
-            'push',
-            'default' as FossilRemoteName,
-        ]);
-    });
-
-    test('PushTo (two remotes)', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const listCall = execStub.withArgs(['remote', 'list']).resolves(
+    test('Pull from the saved Zit remote', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        const remote = exec.withArgs(['remote']).resolves(
             fakeExecutionResult({
-                stdout: 'default https://example.com\norigin ssh://fossil\n',
+                stdout: 'https://example.com/repo.zit\n',
             })
         );
-        const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
-        sqp.onFirstCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            assert.equal(items.length, 2);
-            assert.equal(items[1].label, '$(link) origin');
-            assert.equal(items[1].detail, 'ssh://fossil');
-            return Promise.resolve(items[1]);
-        });
+        const pull = exec.withArgs(['pull']).resolves(fakeExecutionResult());
 
-        const pushCall = execStub
-            .withArgs(sinon.match.array.startsWith(['push']))
-            .resolves();
-        await commands.executeCommand('fossil.pushTo');
-        sinon.assert.calledOnce(listCall);
-        sinon.assert.calledOnce(sqp);
-        sinon.assert.calledOnceWithExactly(pushCall, [
-            'push',
-            'origin' as FossilRemoteName,
-        ]);
+        await commands.executeCommand('zit.pull');
+
+        const signal = pull.firstCall.args[2]?.signal;
+        assert.ok(signal instanceof AbortSignal);
+        sinon.assert.calledOnceWithExactly(remote, ['remote']);
+        sinon.assert.calledOnceWithExactly(pull, ['pull'], undefined, {
+            signal,
+        });
     });
 
-    test('PushTo (two remotes, do not pick)', async () => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        const listCall = execStub.withArgs(['remote', 'list']).resolves(
+    test('Push anonymously to the saved Zit remote', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        const remote = exec.withArgs(['remote']).resolves(
             fakeExecutionResult({
-                stdout: 'default https://example.com\norigin ssh://fossil\n',
+                stdout: 'https://example.com/repo.zit\n',
             })
         );
-        const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
-        sqp.onFirstCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            assert.equal(items.length, 2);
-            assert.equal(items[1].label, '$(link) origin');
-            assert.equal(items[1].detail, 'ssh://fossil');
-            return Promise.resolve(undefined);
-        });
+        const push = exec.withArgs(['push']).resolves(fakeExecutionResult());
+        this.ctx.sandbox.stub(window, 'showInputBox').resolves('');
 
-        const pushCall = execStub
-            .withArgs(sinon.match.array.startsWith(['push']))
-            .resolves();
-        await commands.executeCommand('fossil.pushTo');
-        sinon.assert.calledOnce(listCall);
-        sinon.assert.calledOnce(sqp);
-        sinon.assert.notCalled(pushCall);
+        await commands.executeCommand('zit.push');
+
+        const signal = push.firstCall.args[2]?.signal;
+        assert.ok(signal instanceof AbortSignal);
+        sinon.assert.calledOnceWithExactly(remote, ['remote']);
+        sinon.assert.calledOnceWithExactly(push, ['push'], undefined, {
+            signal,
+        });
+    });
+
+    test('PushTo prompts for a URL and does not persist credentials', async () => {
+        const exec = getExecStub(this.ctx.sandbox);
+        exec.withArgs(['remote']).resolves(
+            fakeExecutionResult({
+                stdout: 'https://example.com/old.zit\n',
+            })
+        );
+        const push = exec
+            .withArgs(['push', 'https://example.com/new.zit'])
+            .resolves(fakeExecutionResult());
+        const input = this.ctx.sandbox.stub(window, 'showInputBox');
+        input.onFirstCall().resolves('https://example.com/new.zit');
+        input.onSecondCall().resolves('');
+
+        await commands.executeCommand('zit.pushTo');
+
+        const signal = push.firstCall.args[2]?.signal;
+        assert.ok(signal instanceof AbortSignal);
+        sinon.assert.calledTwice(input);
+        sinon.assert.calledOnceWithExactly(
+            push,
+            ['push', 'https://example.com/new.zit'],
+            undefined,
+            { signal }
+        );
     });
 }
 
 export function UpdateSuite(this: Suite): void {
-    suite('Pull and Push', PullAndPushSuite);
+    PullAndPushSuite.call(this);
 
     test('Change branch to trunk', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
         const updateCall = execStub
-            .withArgs(['update', 'trunk' as FossilCheckin])
+            .withArgs(['update', 'trunk' as ZitCheckin])
             .resolves(fakeUpdateResult());
 
         const sqp = this.ctx.sandbox.stub(window, 'showQuickPick');
@@ -191,20 +142,66 @@ export function UpdateSuite(this: Suite): void {
             return Promise.resolve(items[2]);
         });
 
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
         sinon.assert.calledOnce(sqp);
         sinon.assert.calledOnce(updateCall);
     });
 
+    test('Update command switches to the selected ref', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['branch'])
+            .resolves(fakeExecutionResult({ stdout: '* trunk\n  feature\n' }));
+        execStub
+            .withArgs(['tag', 'list'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        const update = execStub
+            .withArgs(['update', 'feature' as ZitCheckin])
+            .resolves(fakeUpdateResult());
+        this.ctx.sandbox.stub(window, 'showQuickPick').callsFake(items => {
+            assert.ok(items instanceof Array);
+            const feature = items.find(
+                item => item.label === '$(git-branch) feature'
+            );
+            assert.ok(feature);
+            return Promise.resolve(feature);
+        });
+
+        await commands.executeCommand('zit.update');
+
+        sinon.assert.calledOnce(update);
+    });
+
+    test('Canceling the update picker does not switch refs', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        execStub
+            .withArgs(['branch'])
+            .resolves(fakeExecutionResult({ stdout: '* trunk\n' }));
+        execStub
+            .withArgs(['tag', 'list'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        const update = execStub.withArgs(
+            sinon.match.array.startsWith(['update'])
+        );
+        this.ctx.sandbox.stub(window, 'showQuickPick').resolves(undefined);
+
+        await commands.executeCommand('zit.update');
+
+        sinon.assert.notCalled(update);
+    });
+
     const selectTrunk = async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-        fakeFossilStatus(execStub, 'ADDED fake.txt\nCHERRYPICK aaa');
+        fakeZitStatus(
+            execStub,
+            'added fake.txt\npending merge with ' + 'a'.repeat(64)
+        );
         const repository = getRepository();
         await repository.updateStatus('Test' as Reason);
-        assert.ok(repository.fossilStatus?.isMerge);
+        assert.ok(repository.zitStatus?.isMerge);
 
         const updateCall = execStub
-            .withArgs(['update', 'trunk' as FossilCheckin])
+            .withArgs(['update', 'trunk' as ZitCheckin])
             .resolves(fakeUpdateResult());
 
         const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
@@ -224,7 +221,7 @@ export function UpdateSuite(this: Suite): void {
     test('Change branch to trunk when merge is active', async () => {
         const [swm, updateCall] = await selectTrunk();
         swm.resolves('Continue' as any);
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
         sinon.assert.calledOnce(swm);
         sinon.assert.calledOnce(updateCall);
     });
@@ -232,16 +229,16 @@ export function UpdateSuite(this: Suite): void {
     test('Change branch to trunk when merge is active (cancel)', async () => {
         const [swm, updateCall] = await selectTrunk();
         swm.resolves();
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
         sinon.assert.calledOnce(swm);
         sinon.assert.notCalled(updateCall);
     });
 
     test('Change branch to hash', async () => {
-        await cleanupFossil(getRepository());
+        await cleanupZit(getRepository());
         const execStub = getExecStub(this.ctx.sandbox);
         const updateCall = execStub
-            .withArgs(['update', '1234567890' as FossilCheckin])
+            .withArgs(['update', '1234567890' as ZitCheckin])
             .resolves(fakeUpdateResult());
 
         const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
@@ -254,7 +251,7 @@ export function UpdateSuite(this: Suite): void {
         });
         const showInputBox = this.ctx.sandbox.stub(window, 'showInputBox');
         showInputBox.onFirstCall().resolves('1234567890');
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
 
         sinon.assert.calledOnce(showInputBox);
         sinon.assert.calledOnce(updateCall);
@@ -269,7 +266,7 @@ export function UpdateSuite(this: Suite): void {
         });
         const showInputBox = this.ctx.sandbox.stub(window, 'showInputBox');
         showInputBox.onFirstCall().resolves();
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
         sinon.assert.calledOnce(showInputBox);
     });
 
@@ -281,9 +278,9 @@ export function UpdateSuite(this: Suite): void {
             .withArgs(['tag', 'list'])
             .resolves(fakeExecutionResult({ stdout: 'a\nb $(plus)\nc c c' }));
         const branchesStub = execStub
-            .withArgs(sinon.match.array.startsWith(['branch', 'ls']))
+            .withArgs(['branch'])
             .resolves(
-                fakeExecutionResult({ stdout: '   d\n   e $(plus)\n   f f f' })
+                fakeExecutionResult({ stdout: '  d\n  e $(plus)\n  f f f\n' })
             );
 
         showQuickPick.onFirstCall().callsFake(items => {
@@ -299,13 +296,72 @@ export function UpdateSuite(this: Suite): void {
             return Promise.resolve(items[5]);
         });
         const updateCall = execStub
-            .withArgs(['update', 'a' as FossilCheckin])
+            .withArgs(['update', 'a' as ZitCheckin])
             .resolves(fakeUpdateResult());
-        await commands.executeCommand('fossil.branchChange');
+        await commands.executeCommand('zit.branchChange');
         sinon.assert.calledOnce(tagsStub);
         sinon.assert.calledOnce(branchesStub);
         sinon.assert.calledOnce(showQuickPick);
         sinon.assert.calledOnce(updateCall);
+    });
+
+    test('Dirty update refusal preserves working state', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        fakeZitStatus(execStub, 'edited dirty.txt');
+        const repository = getRepository();
+        await repository.updateStatus('Test' as Reason);
+        const updateCall = execStub
+            .withArgs(['update', 'trunk' as ZitCheckin])
+            .resolves(
+                fakeExecutionResult({
+                    exitCode: 1,
+                    stderr: 'zit update: local changes would be overwritten',
+                })
+            );
+
+        const result = await repository.update('trunk' as ZitCheckin);
+
+        assert.equal(result.exitCode, 1);
+        sinon.assert.calledOnce(updateCall);
+        assertGroups(repository, {
+            working: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'dirty.txt').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
+            ],
+        });
+    });
+
+    test('Undo and redo refresh working state', async () => {
+        const execStub = getExecStub(this.ctx.sandbox);
+        const status = fakeZitStatus(execStub, 'edited restored.txt');
+        const undo = execStub
+            .withArgs(['undo'])
+            .resolves(fakeExecutionResult());
+        const redo = execStub
+            .withArgs(['redo'])
+            .resolves(fakeExecutionResult());
+        const repository = getRepository();
+
+        await repository.undoOrRedo('undo');
+        sinon.assert.calledOnceWithExactly(undo, ['undo']);
+        assertGroups(repository, {
+            working: [
+                [
+                    Uri.joinPath(this.ctx.workspaceUri, 'restored.txt').fsPath,
+                    ResourceStatus.MODIFIED,
+                ],
+            ],
+        });
+
+        status.resolves(fakeStatusResult(''));
+        execStub
+            .withArgs(['diff', '--brief'])
+            .resolves(fakeExecutionResult({ stdout: '' }));
+        await repository.undoOrRedo('redo');
+        sinon.assert.calledOnceWithExactly(redo, ['redo']);
+        assertGroups(repository, {});
     });
 }
 
@@ -314,7 +370,7 @@ export function StashSuite(this: Suite): void {
     /**
      * Create a file and stash it
      */
-    before(() => {
+    suiteSetup(() => {
         uri = Uri.joinPath(this.ctx.workspaceUri, 'stash.txt');
     });
 
@@ -330,17 +386,14 @@ export function StashSuite(this: Suite): void {
             'save',
             '-m',
             'stashSave commit message',
-            'stash.txt',
         ]);
         await repository.updateStatus('Test' as Reason);
         const resource = repository.untrackedGroup.getResource(uri);
         assert.ok(resource);
-        await commands.executeCommand('fossil.add', resource);
-        await commands.executeCommand('fossil.stashSave');
+        await commands.executeCommand('zit.add', resource);
+        await commands.executeCommand('zit.stashSave');
         sinon.assert.calledOnce(stashSave);
-        assertGroups(repository, {
-            untracked: [[uri.fsPath, ResourceStatus.EXTRA]],
-        });
+        assertGroups(repository, {});
     }).timeout(6000);
 
     /**
@@ -363,11 +416,11 @@ export function StashSuite(this: Suite): void {
             );
             return Promise.resolve(items[0]);
         });
-        await commands.executeCommand('fossil.stashApply');
+        await commands.executeCommand('zit.stashApply');
         sinon.assert.calledOnce(stashApply);
         const repository = getRepository();
         assertGroups(repository, {
-            working: [[uri.fsPath, ResourceStatus.ADDED]],
+            added: [[uri.fsPath, ResourceStatus.ADDED]],
         });
     }).timeout(6000);
 
@@ -376,7 +429,7 @@ export function StashSuite(this: Suite): void {
      */
     test('Drop', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-        const stashApply = execStub.withArgs([
+        const stashDrop = execStub.withArgs([
             'stash',
             'drop',
             `${1 as StashID}`,
@@ -389,219 +442,71 @@ export function StashSuite(this: Suite): void {
                 items[0].label,
                 /\$\(circle-outline\) 1 • [a-f0-9]{12}/
             );
-            assert.equal(items[0].description, '$(calendar) now');
+            assert.equal(items[0].description, '1 file(s)');
             assert.equal(items[0].detail, 'stashSave commit message');
             return Promise.resolve(items[0]);
         });
-        await commands.executeCommand('fossil.stashDrop');
-        sinon.assert.calledOnce(stashApply);
+        await commands.executeCommand('zit.stashDrop');
+        sinon.assert.calledOnce(stashDrop);
         sinon.assert.calledOnce(sqp);
 
         const repository = getRepository();
         assertGroups(repository, {
-            working: [[uri.fsPath, ResourceStatus.ADDED]],
+            added: [[uri.fsPath, ResourceStatus.ADDED]],
         });
     }).timeout(6000);
 
     /**
-     * Stash a file ant then pop this stash
+     * Stash a file and then pop this stash
      */
     test('Pop', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
         const repository = getRepository();
-        const openedRepository: OpenedRepository = (repository as any)
-            .repository;
+        const openedRepository = getOpenedRepository();
         await openedRepository.exec([
             'stash',
             'save',
             '-m',
-            'in test' as FossilCommitMessage,
-            'stash.txt' as RelativePath,
+            'in test' as ZitCommitMessage,
         ]);
-        const stashPop = execStub.withArgs(['stash', 'pop']);
-        await commands.executeCommand('fossil.stashPop');
+        const stashPop = execStub.withArgs(['stash', 'pop', '1']);
+        this.ctx.sandbox.stub(window, 'showQuickPick').callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[0]);
+        });
+        await commands.executeCommand('zit.stashPop');
         sinon.assert.calledOnce(stashPop);
         assertGroups(repository, {
-            working: [[uri.fsPath, ResourceStatus.ADDED]],
+            added: [[uri.fsPath, ResourceStatus.ADDED]],
         });
     }).timeout(15000);
 
-    test('Snapshot', async () => {
-        const repository = getRepository();
-        assertGroups(repository, {
-            working: [[uri.fsPath, ResourceStatus.ADDED]],
-        });
+    test('Show', async () => {
         const execStub = getExecStub(this.ctx.sandbox);
-        const stashSnapshot = execStub.withArgs([
+        const openedRepository = getOpenedRepository();
+        await openedRepository.exec([
             'stash',
-            'snapshot',
+            'save',
             '-m',
-            'stashSnapshot commit message',
-            'stash.txt',
+            'stashShow commit message' as ZitCommitMessage,
         ]);
-        const sib = this.ctx.sandbox
-            .stub(window, 'showInputBox')
-            .resolves('stashSnapshot commit message');
-
-        const swm: sinon.SinonStub = this.ctx.sandbox.stub(
-            window,
-            'showWarningMessage'
+        await getRepository().updateStatus('Test: stash show setup' as Reason);
+        const stashShow = execStub.withArgs(['stash', 'show', '1']).resolves(
+            fakeExecutionResult({
+                stdout: 'M stash.txt\n',
+            })
         );
-        swm.withArgs(
-            'There are no staged changes, do you want to commit working changes?\n'
-        ).resolves('C&&onfirm');
+        this.ctx.sandbox.stub(window, 'showQuickPick').callsFake(items => {
+            assert.ok(items instanceof Array);
+            return Promise.resolve(items[0]);
+        });
 
-        await commands.executeCommand('fossil.stashSnapshot');
-        sinon.assert.calledOnce(sib);
-        sinon.assert.calledOnce(swm);
-        sinon.assert.calledOnce(stashSnapshot);
+        await commands.executeCommand('zit.stashShow');
+
+        sinon.assert.calledOnce(stashShow);
     }).timeout(15000);
 
-    after(async () => {
-        await cleanupFossil(getRepository());
-    });
-}
-
-export function PatchSuite(this: Suite): void {
-    test('Create', async () => {
-        const patchPath = Uri.file('patch.patch');
-        const showSaveDialogStub = this.ctx.sandbox
-            .stub(window, 'showSaveDialog')
-            .resolves(patchPath);
-
-        const patchStub = getExecStub(this.ctx.sandbox)
-            .withArgs(['patch', 'create', patchPath.fsPath])
-            .resolves();
-        await commands.executeCommand('fossil.patchCreate');
-
-        sinon.assert.calledOnceWithMatch(showSaveDialogStub, {
-            defaultUri: sinon.match({
-                scheme: 'file',
-                authority: '',
-                path: Uri.joinPath(this.ctx.workspaceUri, 'patch.fossilpatch')
-                    .fsPath,
-            }) as any,
-            saveLabel: 'Create',
-            title: 'Create binary patch',
-        });
-        sinon.assert.calledOnce(patchStub);
-    });
-
-    test('Apply', async () => {
-        const patchPath = Uri.file('patch.patch');
-        const showOpenDialogStub = this.ctx.sandbox
-            .stub(window, 'showOpenDialog')
-            .resolves([patchPath]);
-
-        const patchStub = getExecStub(this.ctx.sandbox)
-            .withArgs(['patch', 'apply', patchPath.fsPath])
-            .resolves();
-        await commands.executeCommand('fossil.patchApply');
-
-        sinon.assert.calledOnceWithMatch(showOpenDialogStub, {
-            defaultUri: sinon.match({
-                scheme: 'file',
-                authority: '',
-                path: Uri.joinPath(this.ctx.workspaceUri, 'patch.fossilpatch')
-                    .fsPath,
-            }) as any,
-            openLabel: 'Apply',
-            title: 'Apply binary patch',
-        });
-        sinon.assert.calledOnce(patchStub);
-    });
-}
-
-export function StageSuite(this: Suite): void {
-    let a_txt: string;
-    let b_txt: string;
-    let c_txt: string;
-
-    before(async () => {
-        await cleanupFossil(getRepository());
-        const rootUri = this.ctx.workspaceUri;
-        a_txt = Uri.joinPath(rootUri, 'a.txt').fsPath;
-        b_txt = Uri.joinPath(rootUri, 'b.txt').fsPath;
-        c_txt = Uri.joinPath(rootUri, 'c.txt').fsPath;
-    });
-
-    const statusSetup = async (status: string) => {
-        const execStub = getExecStub(this.ctx.sandbox);
-        fakeFossilStatus(execStub, status);
-        const repository = getRepository();
-        await repository.updateStatus('Test' as Reason);
-    };
-
-    test('Stage from working group', async () => {
-        await commands.executeCommand('fossil.unstageAll');
-        await statusSetup('ADDED a.txt\nEDITED b.txt\nEDITED c.txt');
-        const repository = getRepository();
-        assertGroups(repository, {
-            working: [
-                [a_txt, ResourceStatus.ADDED],
-                [b_txt, ResourceStatus.MODIFIED],
-                [c_txt, ResourceStatus.MODIFIED],
-            ],
-        });
-        await commands.executeCommand(
-            'fossil.stage',
-            repository.workingGroup.resourceStates[0],
-            repository.workingGroup.resourceStates[1]
-        );
-        assertGroups(repository, {
-            working: [[c_txt, ResourceStatus.MODIFIED]],
-            staging: [
-                [a_txt, ResourceStatus.ADDED],
-                [b_txt, ResourceStatus.MODIFIED],
-            ],
-        });
-    });
-
-    test('Stage (nothing)', async () => {
-        await commands.executeCommand('fossil.stage');
-    });
-
-    test('Unstage (nothing)', async () => {
-        await commands.executeCommand('fossil.unstage');
-    });
-
-    test('Stage all / Unstage all', async () => {
-        await commands.executeCommand('fossil.unstageAll');
-        await statusSetup('ADDED a.txt\nEDITED b.txt\nEDITED c.txt');
-        const repository = getRepository();
-        const allStatuses = [
-            [a_txt, ResourceStatus.ADDED] as const,
-            [b_txt, ResourceStatus.MODIFIED] as const,
-            [c_txt, ResourceStatus.MODIFIED] as const,
-        ];
-        assertGroups(repository, { working: allStatuses });
-        await commands.executeCommand('fossil.stageAll');
-        assertGroups(repository, { staging: allStatuses });
-        await commands.executeCommand('fossil.unstageAll');
-        assertGroups(repository, { working: allStatuses });
-    });
-
-    test('Unstage', async () => {
-        const repository = getRepository();
-        await statusSetup('ADDED a.txt\nEDITED b.txt\nEDITED c.txt');
-        const allStatuses = [
-            [a_txt, ResourceStatus.ADDED] as const,
-            [b_txt, ResourceStatus.MODIFIED] as const,
-            [c_txt, ResourceStatus.MODIFIED] as const,
-        ];
-        assertGroups(repository, { working: allStatuses });
-        await commands.executeCommand('fossil.stageAll');
-        assertGroups(repository, { staging: allStatuses });
-        await commands.executeCommand(
-            'fossil.unstage',
-            repository.stagingGroup.resourceStates[1]
-        );
-        assertGroups(repository, {
-            working: [[b_txt, ResourceStatus.MODIFIED]],
-            staging: [
-                [a_txt, ResourceStatus.ADDED],
-                [c_txt, ResourceStatus.MODIFIED],
-            ],
-        });
+    suiteTeardown(async () => {
+        await cleanupZit(getRepository());
     });
 }

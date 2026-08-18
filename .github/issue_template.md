@@ -1,4 +1,4 @@
-Fossil version: x.x.x
+Zit version: x.x.x
 
 Operating system: ???
 

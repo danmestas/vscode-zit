@@ -3,7 +3,6 @@
     "files.exclude": {
         "out": true,
         "**/.git": true,
-        ".fossil-settings/*.no-warn": true,
         "**/.DS_Store": true,
         "*.vsix": true
     },
@@ -26,6 +25,7 @@
         "cornflowerblue",
         "cornsilk",
         "Crowl",
+        "danmestas",
         "darkcyan",
         "darkgoldenrod",
         "darkgray",
@@ -53,7 +53,6 @@
         "esbuild",
         "floralwhite",
         "forestgreen",
-        "fossilpatch",
         "fslckout",
         "gainsboro",
         "ghostwhite",

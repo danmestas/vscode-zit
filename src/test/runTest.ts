@@ -15,6 +15,7 @@ async function main() {
         const extensionTestsPath = path.resolve(__dirname, './suite');
 
         const testWorkspace = path.resolve(os.tmpdir(), './test_repo');
+        await fs.rm(testWorkspace, { recursive: true, force: true });
         await fs.mkdir(testWorkspace, { recursive: true });
         console.log(`testWorkspace: '${testWorkspace}'`);
         console.log(`extensionDevelopmentPath: '${extensionDevelopmentPath}'`);
@@ -26,7 +27,7 @@ async function main() {
             launchArgs: [testWorkspace, '--disable-extensions', '--no-sandbox'],
             // Fix version to stop tests failing as time goes by. See:
             // https://github.com/microsoft/vscode-test/issues/221
-            version: '1.79.2',
+            version: '1.125.0',
         });
         /* c8 ignore next 4 */
     } catch (err) {

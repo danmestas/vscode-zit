@@ -1,15 +1,15 @@
 import { workspace } from 'vscode';
-import type { FossilUsername, Distinct } from './openedRepository';
-import type { UnvalidatedFossilExecutablePath } from './fossilFinder';
+import type { ZitUsername, Distinct } from './openedRepository';
+import type { UnvalidatedZitExecutablePath } from './zitFinder';
 
 export type AutoSyncIntervalMs = Distinct<number, 'AutoSyncIntervalMs'>;
 
 interface ConfigScheme {
-    ignoreMissingFossilWarning: boolean;
-    path: UnvalidatedFossilExecutablePath;
+    ignoreMissingZitWarning: boolean;
+    path: UnvalidatedZitExecutablePath;
     autoSyncInterval: number;
-    username: FossilUsername; // must be ignored when empty
-    defaultUsername: FossilUsername; // must be ignored when empty
+    username: ZitUsername; // must be ignored when empty
+    defaultUsername: ZitUsername; // must be ignored when empty
     autoRefresh: boolean;
     enableRenaming: boolean;
     confirmGitExport: 'Automatically' | 'Never' | null;
@@ -19,7 +19,7 @@ interface ConfigScheme {
 
 class Config {
     private get config() {
-        return workspace.getConfiguration('fossil');
+        return workspace.getConfiguration('zit');
     }
 
     private get<TName extends keyof ConfigScheme>(
@@ -30,8 +30,8 @@ class Config {
         return this.config.get<ConfigScheme[TName]>(name)!;
     }
 
-    get path(): UnvalidatedFossilExecutablePath {
-        return this.get('path').trim() as UnvalidatedFossilExecutablePath;
+    get path(): UnvalidatedZitExecutablePath {
+        return this.get('path').trim() as UnvalidatedZitExecutablePath;
     }
 
     /**
@@ -50,21 +50,25 @@ class Config {
         return this.get('enableRenaming');
     }
 
-    get ignoreMissingFossilWarning(): boolean {
-        return this.get('ignoreMissingFossilWarning');
+    get ignoreMissingZitWarning(): boolean {
+        return this.get('ignoreMissingZitWarning');
     }
 
-    disableMissingFossilWarning() {
-        return this.config.update('ignoreMissingFossilWarning', true, false);
+    disableMissingZitWarning() {
+        return this.config.update('ignoreMissingZitWarning', true, false);
     }
 
     /**
-     * * Specifies an explicit user to use for fossil commits.
+     * * Specifies an explicit user to use for Zit commits.
      * * This should only be used if the user is different
-     *   than the fossil default user.
+     *   than the Zit default user.
      */
-    get username(): FossilUsername {
+    get username(): ZitUsername {
         return this.get('username');
+    }
+
+    get defaultUsername(): ZitUsername {
+        return this.get('defaultUsername');
     }
 
     disableRenaming() {
@@ -80,13 +84,7 @@ class Config {
     }
 
     get globalArgs() {
-        const defaultUsername = this.get('defaultUsername');
-        const globalArgs = this.get('globalArgs');
-        if (defaultUsername) {
-            // Return a copy to avoid modifying `globalArgs`
-            return [...globalArgs, '--user', defaultUsername];
-        }
-        return globalArgs;
+        return this.get('globalArgs');
     }
     get commitArgs() {
         return this.get('commitArgs');

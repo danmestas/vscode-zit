@@ -1,9 +1,5 @@
 import * as path from 'path';
-import {
-    FossilBranch,
-    FossilCheckin,
-    FossilCommitMessage,
-} from './openedRepository';
+import { ZitBranch, ZitCheckin, ZitCommitMessage } from './openedRepository';
 
 import { localize } from './main';
 
@@ -56,15 +52,15 @@ export function formatFilesAsBulletedList(filenames: string[]): string {
 }
 
 export function describeMerge(
-    localBranchName: FossilBranch,
-    otherBranchName: FossilCheckin
-): FossilCommitMessage {
+    localBranchName: ZitBranch,
+    otherBranchName: ZitCheckin
+): ZitCommitMessage {
     return localize(
         'merge into',
         'Merge {0} into {1}',
         otherBranchName,
         localBranchName
-    ) as FossilCommitMessage;
+    ) as ZitCommitMessage;
 }
 
 export const enum Old {

@@ -1,29 +1,56 @@
-import { Suite, after, before, test } from 'mocha';
+import { Suite, suiteTeardown, suiteSetup, test } from 'mocha';
 import { commands, window, workspace, Uri } from 'vscode';
 import * as assert from 'assert/strict';
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
 import type { languages } from 'vscode';
 import * as sinon from 'sinon';
-import {
-    add,
-    fakeRawExecutionResult,
-    getRawExecStub,
-    getRepository,
-} from './common';
+import { add, getRepository } from './common';
 import type {
-    FossilCommitMessage,
-    FossilUsername,
+    Annotation,
+    ZitCommitMessage,
+    ZitHash,
+    ZitUsername,
     OpenedRepository,
     RelativePath,
 } from '../../openedRepository';
-import type { LineChange } from '../../revert';
+import { renderPraiseLine, ZitAnnotator } from '../../praise';
+import type { DocumentFsPath } from '../../zitExecutable';
+import { revertChanges, type LineChange } from '../../revert';
 import { delay } from '../../util';
 
 function PraiseSuite(this: Suite) {
-    test('Praise nothing', async () => {
-        assert.ok(!window.activeTextEditor);
-        await commands.executeCommand('fossil.praise');
+    test('Praise ignores absent editors and documents outside repositories', async () => {
+        await commands.executeCommand('workbench.action.closePanel');
+        await commands.executeCommand('workbench.action.closeAllEditors');
+        const registerHoverProvider = this.ctx.sandbox.stub(
+            vscode.languages,
+            'registerHoverProvider'
+        );
+        try {
+            await commands.executeCommand('zit.praise');
+            const outside = await workspace.openTextDocument({
+                content: 'outside repository\n',
+            });
+            await window.showTextDocument(outside, {
+                preserveFocus: false,
+                preview: false,
+            });
+            await commands.executeCommand('zit.praise');
+            sinon.assert.notCalled(registerHoverProvider);
+        } finally {
+            registerHoverProvider.restore();
+            await commands.executeCommand('workbench.action.closeAllEditors');
+        }
+    });
+
+    test('Formats the visible line author', () => {
+        const annotation: Annotation = [
+            'a'.repeat(64) as ZitHash,
+            '2026-08-15',
+            'u1' as ZitUsername,
+        ];
+        assert.match(renderPraiseLine(annotation), /u1$/);
     });
 
     suite('Praise file', () => {
@@ -41,36 +68,47 @@ function PraiseSuite(this: Suite) {
         >;
         const sandbox = this.ctx.sandbox;
         let path: string;
+        let cancellationTokenSource: vscode.CancellationTokenSource;
 
-        before(async () => {
+        suiteSetup(async () => {
             this.timeout(30000); // sometimes io is unpredictable)
+            cancellationTokenSource = new vscode.CancellationTokenSource();
             const uri = Uri.joinPath(this.ctx.workspaceUri, 'praise.txt');
             path = uri.fsPath;
+            const relativePath = 'praise.txt' as RelativePath;
             await fs.writeFile(path, [...'first', ''].join('\n'));
             const repository = getRepository();
-            const openedRepository: OpenedRepository = (repository as any)
-                .repository;
+            const repositoryAccess = repository as unknown as {
+                repository: OpenedRepository;
+            };
+            const openedRepository = repositoryAccess.repository;
             const ci = (n: number) =>
                 openedRepository.exec([
                     'commit',
-                    '--user-override',
-                    `u${n}` as FossilUsername,
+                    '--user',
+                    `u${n}` as ZitUsername,
                     '-m',
-                    `praise ${n}` as FossilCommitMessage,
+                    `praise ${n}` as ZitCommitMessage,
                     '--',
-                    path as RelativePath,
+                    relativePath,
                 ]);
-            await openedRepository.exec(['add', '--', path as RelativePath]);
+            await openedRepository.exec(['add', '--', relativePath]);
             await ci(1);
             await fs.appendFile(path, [...'second', ''].join('\n'));
             await ci(2);
             await fs.appendFile(path, [...'third', ''].join('\n'));
             await ci(3);
             await fs.appendFile(path, [...'user', ''].join('\n'));
+            await repository.updateStatus();
 
-            await commands.executeCommand('vscode.open', Uri.file(path));
-            assert.ok(window.activeTextEditor);
-            assert.equal(window.activeTextEditor.document.uri.fsPath, path);
+            await commands.executeCommand('workbench.action.closePanel');
+            const document = await workspace.openTextDocument(uri);
+            const editor = await window.showTextDocument(document, {
+                preserveFocus: false,
+                preview: false,
+            });
+            assert.equal(editor.document.uri.fsPath, path);
+            assert.equal(window.activeTextEditor?.document.uri.fsPath, path);
 
             onDidChangeTextDocumentSpy = sandbox.spy(
                 vscode.workspace,
@@ -90,7 +128,8 @@ function PraiseSuite(this: Suite) {
             );
         });
 
-        after(async () => {
+        suiteTeardown(async () => {
+            cancellationTokenSource.dispose();
             if (window.activeTextEditor?.document.uri.fsPath == path) {
                 await commands.executeCommand(
                     'workbench.action.closeActiveEditor'
@@ -104,18 +143,30 @@ function PraiseSuite(this: Suite) {
 
             const repository = getRepository();
             await commands.executeCommand(
-                'fossil.revertAll',
+                'zit.revertAll',
                 repository.workingGroup
             );
             sinon.assert.calledOnce(swm);
         });
 
         test('First time', async () => {
-            await commands.executeCommand('fossil.praise');
+            assert.equal(window.activeTextEditor?.document.uri.fsPath, path);
+            const annotations = await getRepository().annotate(
+                path as DocumentFsPath
+            );
+            assert.deepEqual(
+                annotations.map(([, , author]) => author),
+                [
+                    ...Array<string>(5).fill('u1'),
+                    ...Array<string>(6).fill('u2'),
+                    ...Array<string>(5).fill('u3'),
+                ]
+            );
+            await commands.executeCommand('zit.praise');
             sinon.assert.calledOnce(registerHoverProviderSpy);
-            sinon.assert.calledOnce(onDidChangeTextDocumentSpy);
-            sinon.assert.calledOnce(onDidCloseTextDocumentSpy);
-            sinon.assert.calledOnce(onDidChangeTextEditorSelectionSpy);
+            assert.equal(onDidChangeTextDocumentSpy.callCount, 1);
+            assert.equal(onDidCloseTextDocumentSpy.callCount, 1);
+            assert.equal(onDidChangeTextEditorSelectionSpy.callCount, 1);
         });
 
         test('Second time', async () => {
@@ -123,7 +174,8 @@ function PraiseSuite(this: Suite) {
                 vscode.languages,
                 'registerHoverProvider'
             );
-            await commands.executeCommand('fossil.praise');
+            assert.equal(window.activeTextEditor?.document.uri.fsPath, path);
+            await commands.executeCommand('zit.praise');
             sinon.assert.notCalled(registerHoverProviderSpy);
         });
 
@@ -133,13 +185,15 @@ function PraiseSuite(this: Suite) {
                 await registerHoverProviderSpy.firstCall.args[1].provideHover(
                     window.activeTextEditor.document,
                     new vscode.Position(1, 1),
-                    null as any
+                    cancellationTokenSource.token
                 );
             assert.ok(hover);
             assert.ok(hover.contents[0] instanceof vscode.MarkdownString);
+            assert.match(hover.contents[0].value, /^\*\*praise 1\*\*/);
+            assert.match(hover.contents[0].value, /\* user: \*\*u1\*\*/);
             assert.match(
                 hover.contents[0].value,
-                /^\*\*praise 1 \(user: u1\)\*\*\n\n\* hash: \*\*.*\*\*\n\* parent: \*\*.*\n\* child: \*\*.*\*\*\n\* tags: \*\*trunk\*\*\n$/
+                /\* checkin: \*\*[0-9a-f]+\*\*/
             );
         });
 
@@ -147,9 +201,9 @@ function PraiseSuite(this: Suite) {
             assert.ok(window.activeTextEditor);
             const hover =
                 await registerHoverProviderSpy.firstCall.args[1].provideHover(
-                    null as any,
-                    null as any,
-                    null as any
+                    undefined as unknown as vscode.TextDocument,
+                    undefined as unknown as vscode.Position,
+                    cancellationTokenSource.token
                 );
             assert.strictEqual(hover, undefined);
         });
@@ -160,7 +214,7 @@ function PraiseSuite(this: Suite) {
                 await registerHoverProviderSpy.firstCall.args[1].provideHover(
                     window.activeTextEditor.document,
                     new vscode.Position(100, 1),
-                    null as any
+                    cancellationTokenSource.token
                 );
             assert.ok(hover);
             assert.ok(hover.contents[0] instanceof vscode.MarkdownString);
@@ -195,14 +249,14 @@ function PraiseSuite(this: Suite) {
             const args = onDidChangeTextEditorSelectionSpy.firstCall.args;
             const change = args[0].bind(args[1]);
             change({
-                kind: undefined as any,
+                kind: undefined,
                 selections: [],
-                textEditor: undefined as any,
+                textEditor: undefined as unknown as vscode.TextEditor,
             });
             assert.ok(window.activeTextEditor);
             // setDecorations cannot be watched, so this is a code coverage test
             change({
-                kind: undefined as any,
+                kind: undefined,
                 selections: [
                     new vscode.Selection(
                         new vscode.Position(1, 1),
@@ -212,157 +266,18 @@ function PraiseSuite(this: Suite) {
                 textEditor: window.activeTextEditor,
             });
         });
+        test('Renders consecutive local annotation rows', () => {
+            const editor = window.activeTextEditor;
+            assert.ok(editor);
+            const repository = getRepository();
+            const annotations: Annotation[] = [
+                ['' as ZitHash, '', '' as ZitUsername],
+                ['' as ZitHash, '', '' as ZitUsername],
+            ];
+            ZitAnnotator.create(repository, editor, annotations);
+            assert.equal(ZitAnnotator.tryDelete(editor), true);
+        });
     });
-}
-
-function RenderSuite(this: Suite) {
-    let panel: vscode.WebviewPanel | undefined;
-    let theEditor: vscode.TextEditor | undefined;
-    this.beforeEach(async () => {
-        if (!panel) {
-            panel = await createAndTestPanel();
-        }
-    });
-    this.afterAll(async () => {
-        assert.ok(panel);
-        panel.dispose();
-        assert.ok(theEditor);
-        await vscode.window.showTextDocument(theEditor.document, {
-            preview: false,
-        });
-        await vscode.commands.executeCommand(
-            'workbench.action.closeActiveEditor'
-        );
-    });
-
-    const createAndTestPanel = async () => {
-        const untitledDocument = await workspace.openTextDocument();
-        theEditor = await window.showTextDocument(untitledDocument);
-        await theEditor.edit(te =>
-            te.insert(new vscode.Position(0, 0), '# test\n\n1. a\n1. b')
-        );
-        await commands.executeCommand('vscode.open', untitledDocument.uri);
-        assert.equal(window.activeTextEditor, theEditor);
-        const cwp = this.ctx.sandbox.spy(window, 'createWebviewPanel');
-        await commands.executeCommand('fossil.render', untitledDocument.uri);
-        sinon.assert.calledOnce(cwp);
-        const panel = cwp.firstCall.returnValue;
-        const postMessageStub = this.ctx.sandbox
-            .stub(panel.webview, 'postMessage')
-            .callThrough();
-        const postedMessage = await new Promise<any>(c => {
-            postMessageStub
-                .onFirstCall()
-                .callsFake((message: any): Thenable<boolean> => {
-                    const ret = postMessageStub.wrappedMethod.call(
-                        panel.webview,
-                        message
-                    );
-                    c(message);
-                    return ret;
-                });
-        });
-        sinon.assert.match(postedMessage, {
-            html: sinon.match.string,
-            uri: sinon.match.string,
-        });
-        return panel;
-    };
-    test('Render', async () => {
-        /** WebView panel is created in beforeEach */
-        assert.ok(panel);
-    }).timeout(9000);
-
-    test('Create Technote', async () => {
-        const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
-        showQuickPick.onFirstCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            assert.equal(items[0], 'Technote');
-            return Promise.resolve(items[0]);
-        });
-        const commentStub = this.ctx.sandbox
-            .stub(window, 'showInputBox')
-            .withArgs(
-                sinon.match({ prompt: 'Timeline comment of the technote' })
-            )
-            .resolves('technote comment');
-
-        const sim: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showInformationMessage')
-            .resolves();
-        await commands.executeCommand('fossil.wikiCreate');
-        sinon.assert.calledOnce(commentStub);
-        sinon.assert.calledOnceWithExactly(
-            sim,
-            'Technote was successfully created'
-        );
-    });
-
-    test('Create Wiki', async () => {
-        const showQuickPick = this.ctx.sandbox.stub(window, 'showQuickPick');
-        showQuickPick.onFirstCall().callsFake(items => {
-            assert.ok(items instanceof Array);
-            assert.equal(items[1], 'Wiki');
-            return Promise.resolve(items[1]);
-        });
-        const commentStub = this.ctx.sandbox
-            .stub(window, 'showInputBox')
-            .withArgs(sinon.match({ prompt: 'Name of the wiki entry' }))
-            .resolves('wiki_entry');
-
-        const sim: sinon.SinonStub = this.ctx.sandbox
-            .stub(window, 'showInformationMessage')
-            .resolves();
-        await commands.executeCommand('fossil.wikiCreate');
-        sinon.assert.calledOnce(commentStub);
-        sinon.assert.calledOnceWithExactly(
-            sim,
-            'Wiki was successfully created'
-        );
-    });
-
-    test('Save Canceled', async () => {
-        const showSaveDialogStub = this.ctx.sandbox
-            .stub(window, 'showSaveDialog')
-            .resolves(undefined);
-
-        await commands.executeCommand('fossil.renderSave');
-        sinon.assert.calledOnceWithExactly(showSaveDialogStub, {
-            defaultUri: sinon.match({
-                scheme: 'file',
-                authority: '',
-                path: Uri.joinPath(this.ctx.workspaceUri, 'Untitled-1.html')
-                    .fsPath,
-            }) as any,
-            title: 'Save Preview',
-        });
-    }).timeout(9000);
-
-    test('Save', async () => {
-        const showSaveDialogStub = this.ctx.sandbox
-            .stub(window, 'showSaveDialog')
-            .callsFake(async options => options?.defaultUri);
-        const writeFileStub = this.ctx.sandbox.stub(fs, 'writeFile');
-        await commands.executeCommand('fossil.renderSave');
-        sinon.assert.calledOnceWithMatch(
-            writeFileStub,
-            Uri.joinPath(this.ctx.workspaceUri, 'Untitled-1.html').fsPath,
-            sinon.match.string
-        );
-        sinon.assert.calledOnce(showSaveDialogStub);
-    }).timeout(9000);
-
-    test('Change language to pikchr', async () => {
-        const wikiRenderStub = getRawExecStub(this.ctx.sandbox)
-            .withArgs(sinon.match.array.startsWith(['test-wiki-render']))
-            .resolves(fakeRawExecutionResult({ stdout: 'wiki body\n' }));
-        assert.ok(theEditor);
-        await vscode.languages.setTextDocumentLanguage(
-            theEditor.document,
-            'html'
-        );
-        sinon.assert.calledOnce(wikiRenderStub);
-    }).timeout(9000);
 }
 
 function RevertChangeSuite(this: Suite) {
@@ -370,7 +285,7 @@ function RevertChangeSuite(this: Suite) {
         const rootUri = this.ctx.workspaceUri;
         const filename = 'revert_change.txt';
         const uriToChange = Uri.joinPath(rootUri, filename);
-        await commands.executeCommand('fossil.revertChange', uriToChange); // branch coverage
+        await commands.executeCommand('zit.revertChange', uriToChange); // branch coverage
 
         const content = [...'abcdefghijklmnopqrstuvwxyz'].join('\n');
         await add(filename, content, `add '${filename}'`);
@@ -385,7 +300,7 @@ function RevertChangeSuite(this: Suite) {
         const document = await workspace.openTextDocument(uriToChange);
         await window.showTextDocument(document);
 
-        // to fill this array, debug `fossil.revertChange`
+        // to fill this array, debug `zit.revertChange`
         const changes: LineChange[] = [
             {
                 originalStartLineNumber: 0,
@@ -408,7 +323,7 @@ function RevertChangeSuite(this: Suite) {
         ];
         await delay(150);
         await commands.executeCommand(
-            'fossil.revertChange',
+            'zit.revertChange',
             uriToChange,
             changes,
             2
@@ -420,7 +335,7 @@ function RevertChangeSuite(this: Suite) {
         );
         await delay(150);
         await commands.executeCommand(
-            'fossil.revertChange',
+            'zit.revertChange',
             uriToChange,
             changes.slice(0, 2),
             1
@@ -432,7 +347,7 @@ function RevertChangeSuite(this: Suite) {
         );
         await delay(150);
         await commands.executeCommand(
-            'fossil.revertChange',
+            'zit.revertChange',
             uriToChange,
             changes.slice(0, 1),
             0
@@ -442,12 +357,69 @@ function RevertChangeSuite(this: Suite) {
     }).timeout(11000);
 
     test('Revert nothing', async () => {
-        await commands.executeCommand('fossil.revertChange');
+        await commands.executeCommand('zit.revertChange');
+    });
+
+    test('Ignores range reverts for non-file documents', async () => {
+        const open = this.ctx.sandbox.stub(workspace, 'openTextDocument');
+        const editor = {
+            document: { uri: Uri.parse('untitled:coverage') },
+        } as unknown as vscode.TextEditor;
+
+        await revertChanges(editor, []);
+
+        sinon.assert.notCalled(open);
+    });
+
+    test('Handles insertions and deletions at the final line', async () => {
+        const lineAt = (line: number) => ({
+            range: { end: new vscode.Position(line, 1) },
+        });
+        const original = {
+            uri: Uri.file('/tmp/revert-original.txt'),
+            lineCount: 3,
+            lineAt,
+            getText: () => '',
+        } as unknown as vscode.TextDocument;
+        const modified = {
+            uri: Uri.file('/tmp/revert-modified.txt'),
+            lineCount: 4,
+            lineAt,
+            getText: () => '',
+        } as unknown as vscode.TextDocument;
+        const visibleRange = new vscode.Range(0, 0, 0, 1);
+        const revealRange = this.ctx.sandbox.stub();
+        const editor = {
+            document: modified,
+            visibleRanges: [visibleRange],
+            revealRange,
+        } as unknown as vscode.TextEditor;
+        this.ctx.sandbox.stub(workspace, 'openTextDocument').resolves(original);
+        const apply = this.ctx.sandbox
+            .stub(workspace, 'applyEdit')
+            .resolves(true);
+
+        await revertChanges(editor, [
+            {
+                originalStartLineNumber: 3,
+                originalEndLineNumber: 3,
+                modifiedStartLineNumber: 3,
+                modifiedEndLineNumber: 0,
+            },
+            {
+                originalStartLineNumber: 3,
+                originalEndLineNumber: 0,
+                modifiedStartLineNumber: 4,
+                modifiedEndLineNumber: 4,
+            },
+        ]);
+
+        sinon.assert.calledOnce(apply);
+        sinon.assert.calledOnceWithExactly(revealRange, visibleRange);
     });
 }
 
 export function QualityOfLifeSuite(this: Suite): void {
     suite('Praise', PraiseSuite);
-    suite('Render', RenderSuite);
     suite('Revert change', RevertChangeSuite);
 }

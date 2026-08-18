@@ -1,12 +1,12 @@
 import { Uri, window, commands } from 'vscode';
 import * as sinon from 'sinon';
-import { add, fakeFossilStatus, getExecStub, getRepository } from './common';
+import { add, fakeZitStatus, getExecStub, getRepository } from './common';
 import * as assert from 'assert/strict';
 import * as fs from 'fs/promises';
 import type { Suite } from 'mocha';
-import type { FossilResourceGroup } from '../../resourceGroups';
-import type { FossilResource } from '../../repository';
-import { Reason } from '../../fossilExecutable';
+import type { ZitResourceGroup } from '../../resourceGroups';
+import type { ZitResource } from '../../repository';
+import { Reason } from '../../zitExecutable';
 import { RelativePath } from '../../openedRepository';
 
 export function RevertSuite(this: Suite): void {
@@ -29,13 +29,13 @@ export function RevertSuite(this: Suite): void {
         );
         showWarningMessage.onFirstCall().resolves('&&Discard Changes');
 
-        await commands.executeCommand('fossil.revert', resource);
+        await commands.executeCommand('zit.revert', resource);
         const newContext = await fs.readFile(url.fsPath);
         assert.equal(newContext.toString('utf-8'), 'Some original text\n');
     });
 
     suite('Dialog has no typos', () => {
-        let swmResources: FossilResource[];
+        let swmResources: ZitResource[];
         const prepareResources = async () => {
             if (swmResources) {
                 return swmResources;
@@ -52,19 +52,18 @@ export function RevertSuite(this: Suite): void {
                     filename
                 );
                 const action = ['k', 'l', 'm', 'n'].includes(filename)
-                    ? 'ADDED'
-                    : 'EDITED';
-                fake_status.push(`${action}     added/${filename}`);
+                    ? 'added'
+                    : 'edited';
+                fake_status.push(`${action} added/${filename}`);
                 fileUris.push(fileUri);
             }
-            const statusCall = fakeFossilStatus(
-                execStub,
-                fake_status.join('\n')
-            );
+            const statusCall = fakeZitStatus(execStub, fake_status.join('\n'));
             await repository.updateStatus('Test' as Reason);
             sinon.assert.calledOnce(statusCall);
             const resources = fileUris.map(uri => {
-                const resource = repository.workingGroup.getResource(uri);
+                const resource =
+                    repository.workingGroup.getResource(uri) ??
+                    repository.addedGroup.getResource(uri);
                 assert.ok(resource);
                 return resource;
             });
@@ -75,7 +74,7 @@ export function RevertSuite(this: Suite): void {
         test('10 + 4 files', async () => {
             const resources = await prepareResources();
             const swm = this.ctx.sandbox.stub(window, 'showWarningMessage');
-            await commands.executeCommand('fossil.revert', ...resources);
+            await commands.executeCommand('zit.revert', ...resources);
             sinon.assert.calledOnceWithMatch(
                 swm,
                 'Are you sure you want to discard changes to 10 files?\n' +
@@ -89,7 +88,7 @@ export function RevertSuite(this: Suite): void {
             const resources = await prepareResources();
             const swm = this.ctx.sandbox.stub(window, 'showWarningMessage');
             await commands.executeCommand(
-                'fossil.revert',
+                'zit.revert',
                 ...resources.slice(0, 10)
             );
             sinon.assert.calledOnceWithMatch(
@@ -105,7 +104,7 @@ export function RevertSuite(this: Suite): void {
             const resources = await prepareResources();
             const swm = this.ctx.sandbox.stub(window, 'showWarningMessage');
             await commands.executeCommand(
-                'fossil.revert',
+                'zit.revert',
                 ...resources.slice(0, 3)
             );
             sinon.assert.calledOnceWithMatch(
@@ -116,54 +115,76 @@ export function RevertSuite(this: Suite): void {
             );
         });
 
-        test('2 added file', async () => {
+        test('2 added files', async () => {
             const resources = await prepareResources();
+            const execStub = getExecStub(this.ctx.sandbox);
+            fakeZitStatus(execStub, '');
+            const forget = execStub
+                .withArgs(['rm', '--', 'added/k', 'added/l'])
+                .resolves();
             const swm = this.ctx.sandbox.stub(window, 'showWarningMessage');
             await commands.executeCommand(
-                'fossil.revert',
+                'zit.revert',
                 ...resources.slice(10, 12)
             );
             sinon.assert.notCalled(swm);
+            sinon.assert.calledOnce(forget);
         });
     });
 
     test('Revert (Nothing)', async () => {
-        await commands.executeCommand('fossil.revert');
+        await commands.executeCommand('zit.revert');
     });
 
-    // for testing `fossil.revertAll` only
+    // for testing `zit.revertAll` only
     async function revertAllTest(
         sandbox: sinon.SinonSandbox,
-        groups: FossilResourceGroup[],
+        groups: ZitResourceGroup[],
         message: string,
-        files: string[]
+        files: { revert?: string[]; forget?: string[] }
     ): Promise<void> {
         const swm: sinon.SinonStub = sandbox.stub(window, 'showWarningMessage');
         swm.onFirstCall().resolves('&&Discard Changes');
 
         const repository = getRepository();
         const execStub = getExecStub(sandbox);
-        const statusStub = fakeFossilStatus(
+        const statusStub = fakeZitStatus(
             execStub,
-            'EDITED a.txt\nEDITED b.txt\nCONFLICT c.txt\nCONFLICT d.txt'
+            'edited a.txt\nedited b.txt\nadded c.txt\nadded d.txt'
         );
         const revertStub = execStub
             .withArgs(sinon.match.array.startsWith(['revert']))
             .resolves();
+        const forgetStub = execStub
+            .withArgs(sinon.match.array.startsWith(['rm']))
+            .resolves();
         await repository.updateStatus('Test' as Reason);
         sinon.assert.calledOnce(statusStub);
-        await commands.executeCommand('fossil.revertAll', ...groups);
+        await commands.executeCommand('zit.revertAll', ...groups);
         sinon.assert.calledOnceWithExactly(
             swm,
             message,
             { modal: true },
             '&&Discard Changes'
         );
-        sinon.assert.calledOnceWithExactly(revertStub, [
-            'revert',
-            '--',
-            ...(files as RelativePath[]),
-        ]);
+        if (files.revert) {
+            sinon.assert.calledOnceWithExactly(revertStub, [
+                'revert',
+                '--',
+                ...(files.revert as RelativePath[]),
+            ]);
+        } else {
+            sinon.assert.notCalled(revertStub);
+        }
+        if (files.forget) {
+            sinon.assert.calledOnceWithExactly(forgetStub, [
+                'rm',
+                '--',
+                ...(files.forget as RelativePath[]),
+            ]);
+        } else {
+            sinon.assert.notCalled(forgetStub);
+        }
     }
 
     test('Revert all (no groups)', async () => {
@@ -171,8 +192,8 @@ export function RevertSuite(this: Suite): void {
             this.ctx.sandbox,
             [],
             'Are you sure you want to discard changes in ' +
-                '"Changes" and "Unresolved Conflicts" group?',
-            ['a.txt', 'b.txt', 'c.txt', 'd.txt']
+                '"Added Files" and "Changes" groups?',
+            { revert: ['a.txt', 'b.txt'], forget: ['c.txt', 'd.txt'] }
         );
     });
 
@@ -182,18 +203,17 @@ export function RevertSuite(this: Suite): void {
             this.ctx.sandbox,
             [repository.workingGroup],
             'Are you sure you want to discard changes in "Changes" group?',
-            ['a.txt', 'b.txt']
+            { revert: ['a.txt', 'b.txt'] }
         );
     });
 
-    test('Revert all (conflict group)', async () => {
+    test('Revert all (added group)', async () => {
         const repository = getRepository();
         await revertAllTest(
             this.ctx.sandbox,
-            [repository.conflictGroup],
-            'Are you sure you want to discard changes ' +
-                'in "Unresolved Conflicts" group?',
-            ['c.txt', 'd.txt']
+            [repository.addedGroup],
+            'Are you sure you want to discard changes in "Added Files" group?',
+            { forget: ['c.txt', 'd.txt'] }
         );
     });
 }

@@ -1,29 +1,27 @@
 import * as assert from 'assert/strict';
-import { window, Uri } from 'vscode';
+import { Uri } from 'vscode';
 import * as vscode from 'vscode';
 import * as sinon from 'sinon';
 import * as fs from 'fs';
 import {
-    FossilExecutable,
-    FossilCWD,
-    FossilArgs,
-    FossilStdErr,
-    FossilStdOut,
-    FossilExecutablePath,
+    ZitExecutable,
+    ZitCWD,
+    ZitArgs,
+    ZitStdErr,
+    ZitStdOut,
+    ZitExecutablePath,
     ExecResult,
     Reason,
-} from '../../fossilExecutable';
+} from '../../zitExecutable';
 import { Model } from '../../model';
 import { Repository } from '../../repository';
 import {
-    FossilCommitMessage,
-    FossilPath,
+    ZitCommitMessage,
     OpenedRepository,
     RelativePath,
     ResourceStatus,
 } from '../../openedRepository';
-import { FossilResourceGroup } from '../../resourceGroups';
-import { delay } from '../../util';
+import { ZitResourceGroup } from '../../resourceGroups';
 
 export type SinonStubT<T extends (...args: any) => any> = sinon.SinonStub<
     Parameters<T>,
@@ -31,80 +29,68 @@ export type SinonStubT<T extends (...args: any) => any> = sinon.SinonStub<
 >;
 
 export async function cleanRoot(): Promise<void> {
-    /* c8 ignore next 5 */
-    if (!vscode.workspace.workspaceFolders) {
-        throw new Error(
-            'Expected opened workspace. Probably setup issue and `out/test/test_repo` does not exist.'
-        );
-    }
-
-    const rootPath = vscode.workspace.workspaceFolders[0].uri;
-    const entities = await fs.promises.readdir(rootPath.fsPath);
-    await Promise.all(
-        entities.map(name =>
-            fs.promises.rm(Uri.joinPath(rootPath, name).fsPath, {
-                force: true,
-                recursive: true,
-            })
-        )
+    assert.ok(
+        vscode.workspace.workspaceFolders,
+        'Expected opened workspace. Probably setup issue and `out/test/test_repo` does not exist.'
     );
+    const rootPath = vscode.workspace.workspaceFolders[0].uri;
+    await fs.promises.rm(rootPath.fsPath, {
+        force: true,
+        recursive: true,
+    });
+    await fs.promises.mkdir(rootPath.fsPath, { recursive: true });
 }
 
-export async function fossilInit(sandbox: sinon.SinonSandbox): Promise<void> {
-    const fossilVersion = getExecutable().version;
+export async function zitInit(): Promise<void> {
     assert.ok(vscode.workspace.workspaceFolders);
-    const fossilPath = Uri.joinPath(
-        vscode.workspace.workspaceFolders[0].uri,
-        '/test.fossil'
-    );
-    assert.ok(
-        !fs.existsSync(fossilPath.fsPath),
-        `repo '${fossilPath.fsPath}' already exists`
-    );
+    const rootUri = vscode.workspace.workspaceFolders[0].uri;
+    const root = rootUri.fsPath as ZitCWD;
+    const executable = getExecutable();
 
-    const showSaveDialogStub = sandbox
-        .stub(window, 'showSaveDialog')
-        .withArgs(sinon.match({ title: 'Select New Fossil File Location' }))
-        .resolves(fossilPath);
+    const initialized = await executable.exec(root, [
+        'init',
+        '--',
+        root,
+    ] as ZitArgs);
+    assert.equal(initialized.exitCode, 0, initialized.stderr);
+    assert.ok(fs.existsSync(Uri.joinPath(rootUri, '.zit').fsPath));
+    assert.ok(fs.existsSync(Uri.joinPath(rootUri, '.zit-checkout').fsPath));
 
-    const showInformationMessage: sinon.SinonStub = sandbox.stub(
-        window,
-        'showInformationMessage'
+    const seed = 'vscode-zit-test.txt';
+    await fs.promises.writeFile(
+        Uri.joinPath(rootUri, seed).fsPath,
+        'deterministic Zit integration fixture\n'
     );
-    const openRepositoryQuestion = showInformationMessage
-        .withArgs(
-            'Would you like to open the cloned repository?',
-            'Open Repository'
-        )
-        .resolves();
+    const added = await executable.exec(root, [
+        'add',
+        '--',
+        seed as RelativePath,
+    ]);
+    assert.equal(added.exitCode, 0, added.stderr);
+    const committed = await executable.exec(root, [
+        'commit',
+        '-m',
+        'Initial integration fixture' as ZitCommitMessage,
+        '--user',
+        'vscode-zit-tests',
+        '--no-sync',
+        '--',
+        seed as RelativePath,
+    ] as ZitArgs);
+    assert.equal(committed.exitCode, 0, committed.stderr);
+}
 
-    const showInputBox = sandbox.stub(window, 'showInputBox');
-    if (fossilVersion >= [2, 18]) {
-        showInputBox
-            .withArgs(sinon.match({ prompt: 'Project Name' }))
-            .resolves('Test repo name');
-        showInputBox
-            .withArgs(sinon.match({ prompt: 'Project Description' }))
-            .resolves('Test repo description');
-    }
-
-    await vscode.commands.executeCommand('fossil.init');
-    sinon.assert.calledOnce(showSaveDialogStub);
-    if (fossilVersion >= [2, 18]) {
-        sinon.assert.calledTwice(showInputBox);
-    } else {
-        sinon.assert.notCalled(showInputBox);
-    }
-    assert.ok(
-        fs.existsSync(fossilPath.fsPath),
-        `Not a file: '${fossilPath.fsPath}' even though 'fossil.init' was successfully executed`
-    );
-    sinon.assert.calledOnce(openRepositoryQuestion);
+export async function zitOpen(sandbox: sinon.SinonSandbox): Promise<void> {
+    assert.ok(vscode.workspace.workspaceFolders);
+    const rootUri = vscode.workspace.workspaceFolders[0].uri;
+    sandbox.stub(vscode.window, 'showOpenDialog').resolves([rootUri]);
+    await vscode.commands.executeCommand('zit.open');
+    assert.equal(getModel().repositories.length, 1);
     sandbox.restore();
 }
 
 export function getModel(): Model {
-    const extension = vscode.extensions.getExtension('koog1000.fossil');
+    const extension = vscode.extensions.getExtension('danmestas.zit');
     assert.ok(extension);
     const model = extension.exports as Model;
     assert.ok(model, "extension initialization didn't succeed");
@@ -117,7 +103,13 @@ export function getRepository(): Repository {
     return model.repositories[0];
 }
 
-export function getExecutable(): FossilExecutable {
+export function getOpenedRepository(): OpenedRepository {
+    const opened = Reflect.get(getRepository(), 'repository') as unknown;
+    assert.ok(opened instanceof OpenedRepository);
+    return opened;
+}
+
+export function getExecutable(): ZitExecutable {
     const model = getModel();
     const executable = model['executable'];
     assert.ok(executable);
@@ -127,18 +119,15 @@ export function getExecutable(): FossilExecutable {
 export type ExecStub = SinonStubT<OpenedRepository['exec']>;
 /** Returns calling through `OpenedRepository.exec` stub */
 export function getExecStub(sandbox: sinon.SinonSandbox): ExecStub {
-    const repository = getRepository();
-    const openedRepository: OpenedRepository = (repository as any).repository;
-    return sandbox.stub(openedRepository, 'exec').callThrough();
+    return sandbox.stub(getOpenedRepository(), 'exec').callThrough();
 }
 
-type RawExecFunc = FossilExecutable['rawExec'];
+type RawExecFunc = ZitExecutable['rawExec'];
 type RawExecStub = SinonStubT<RawExecFunc>;
-/** Returns calling through `FossilExecutable.rawExec` stub */
+/** Returns calling through `ZitExecutable.rawExec` stub */
 export function getRawExecStub(sandbox: sinon.SinonSandbox): RawExecStub {
     const repository = getRepository();
-    const executable: FossilExecutable = (repository as any).repository
-        .executable;
+    const executable: ZitExecutable = (repository as any).repository.executable;
     return sandbox.stub(executable, 'rawExec').callThrough();
 }
 
@@ -150,16 +139,18 @@ export function fakeExecutionResult({
 }: {
     stdout?: string;
     stderr?: string;
-    args?: FossilArgs;
+    args?: ZitArgs;
     exitCode?: number;
 } = {}): ExecResult {
     return {
-        fossilPath: '' as FossilExecutablePath,
+        zitPath: '' as ZitExecutablePath,
         exitCode: exitCode ?? 0,
-        stdout: (stdout ?? '') as FossilStdOut,
-        stderr: (stderr ?? '') as FossilStdErr,
+        stdout: (stdout ?? '') as ZitStdOut,
+        stderr: (stderr ?? '') as ZitStdErr,
         args: args ?? ['status'],
-        cwd: '' as FossilCWD,
+        cwd: '' as ZitCWD,
+        command: `zit ${(args ?? ['status']).join(' ')}`,
+        durationMs: 0,
     } as ExecResult;
 }
 
@@ -171,41 +162,70 @@ export function fakeRawExecutionResult({
 }: {
     stdout?: string;
     stderr?: string;
-    args?: FossilArgs;
+    args?: ZitArgs;
     exitCode?: 0 | 1;
 } = {}): Awaited<ReturnType<RawExecFunc>> {
     return {
-        fossilPath: '' as FossilExecutablePath,
+        zitPath: '' as ZitExecutablePath,
         exitCode: exitCode ?? 0,
         stdout: Buffer.from(stdout ?? ''),
         stderr: Buffer.from(stderr ?? ''),
-        args: args ?? ['status', '--differ', '--merge'],
-        cwd: '' as FossilCWD,
+        args: args ?? ['status'],
+        cwd: '' as ZitCWD,
+        command: `zit ${(args ?? ['status']).join(' ')}`,
+        durationMs: 0,
     };
 }
 
 export function fakeStatusResult(status: string): ExecResult {
-    const args: FossilArgs = ['status', '--differ', '--merge'];
-    const header =
-        'checkout:     0000000000000000000000000000000000000000 2023-05-26 12:43:56 UTC\n' +
-        'parent:       0000000000000000000000000000000000000001 2023-05-26 12:43:56 UTC\n' +
-        'tags:         trunk, this is a test, custom tag\n';
+    const args: ZitArgs = ['status'];
+    const header = 'On branch trunk (check-in ' + '0'.repeat(64) + ')\n';
     return fakeExecutionResult({ stdout: header + status, args });
 }
 
-export function fakeFossilStatus(execStub: ExecStub, status: string): ExecStub {
-    return execStub
-        .withArgs(sinon.match.array.contains(['status', '--differ', '--merge']))
-        .resolves(fakeStatusResult(status));
-}
-
-export function fakeFossilBranch(
+export function fakeZitStatus(
     execStub: ExecStub,
-    branch: 'refresh' | 'trunk'
+    status: string,
+    diff?: string
 ): ExecStub {
-    return execStub
-        .withArgs(['branch', 'current'])
-        .resolves(fakeExecutionResult({ stdout: branch }));
+    const lines = status
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+    const tracked = lines.filter(line => !line.startsWith('extra '));
+    const extras = lines
+        .filter(line => line.startsWith('extra '))
+        .map(line => line.slice('extra '.length));
+    const brief =
+        diff ??
+        tracked
+            .filter(line => /^(?:added|edited|missing) /.test(line))
+            .map(line => {
+                const separator = line.indexOf(' ');
+                const kind = line.slice(0, separator);
+                const filePath = line.slice(separator + 1);
+                const marker =
+                    kind === 'added' ? 'A' : kind === 'missing' ? 'D' : 'M';
+                return `${marker} ${filePath}`;
+            })
+            .join('\n');
+
+    const statusStub = execStub
+        .withArgs(['status'])
+        .resolves(fakeStatusResult(tracked.join('\n')));
+    execStub.withArgs(['diff', '--brief']).resolves(
+        fakeExecutionResult({
+            args: ['diff', '--brief'] as ZitArgs,
+            stdout: brief ? `${brief.trimEnd()}\n` : '',
+        })
+    );
+    execStub.withArgs(['extras']).resolves(
+        fakeExecutionResult({
+            args: ['extras'] as ZitArgs,
+            stdout: extras.length ? `${extras.join('\n')}\n` : '',
+        })
+    );
+    return statusStub;
 }
 
 type Changes = `${number} files modified.` | 'None. Already up-to-date';
@@ -216,191 +236,86 @@ export function fakeUpdateResult(
     return fakeExecutionResult({ stdout: `changes: ${changes}\n` });
 }
 
-export function fakeFossilChanges(
-    execStub: ExecStub,
-    changes: Changes = 'None. Already up-to-date'
-): ExecStub {
-    return execStub
-        .withArgs(['update', '--dry-run'])
-        .resolves(fakeUpdateResult(changes));
-}
-
-async function setupFossilOpen(sandbox: sinon.SinonSandbox) {
-    assert.ok(vscode.workspace.workspaceFolders);
-    const rootPath = vscode.workspace.workspaceFolders[0].uri;
-    const fossilPath = Uri.joinPath(rootPath, '/test.fossil');
-    assert.ok(
-        fs.existsSync(fossilPath.fsPath),
-        `repo '${fossilPath.fsPath}' must exist`
-    );
-
-    const executable = getExecutable();
-    const openStub = sandbox
-        .stub(executable, 'exec')
-        .callThrough()
-        .withArgs(
-            rootPath.fsPath as FossilCWD,
-            sinon.match.array.startsWith(['open'])
-        );
-    const sod = sandbox.stub(window, 'showOpenDialog');
-    sod.onFirstCall().resolves([fossilPath]);
-    sod.onSecondCall().resolves([rootPath]);
-    return {
-        rootPath,
-        fossilPath,
-        executable,
-        openStub,
-        sod,
-    };
-}
-
-export async function fossilOpen(sandbox: sinon.SinonSandbox): Promise<void> {
-    const { rootPath, fossilPath, executable, openStub, sod } =
-        await setupFossilOpen(sandbox);
-
-    await vscode.commands.executeCommand('fossil.open');
-    const repository = getRepository();
-    const rootUri = vscode.workspace.workspaceFolders![0].uri;
-    sinon.assert.calledTwice(sod);
-    sinon.assert.calledWith(sod.firstCall, {
-        defaultUri: sinon.match({
-            scheme: 'file',
-            authority: '',
-            path: Uri.joinPath(rootUri, 'test_repo.fossil').fsPath,
-        }) as any,
-        openLabel: 'Repository Location',
-        filters: { 'Fossil Files': ['fossil'], 'All files': ['*'] },
-        canSelectMany: false,
-    });
-    sinon.assert.calledWith(sod.secondCall, {
-        defaultUri: sinon.match({
-            scheme: 'file',
-            authority: '',
-            path: rootUri.fsPath,
-        }) as any,
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        title: 'Select Fossil Root Directory',
-    });
-    sinon.assert.calledOnceWithExactly(openStub, rootPath.fsPath as FossilCWD, [
-        'open',
-        fossilPath.fsPath as FossilPath,
-    ]);
-    const res = await executable.exec(rootPath.fsPath as FossilCWD, ['info']);
-    assert.match(res.stdout, /check-ins:\s+1\s*$/);
-
-    for (let i = 0; i < 1500; ++i) {
-        // wait for repository full initialization, i.e.
-        // successful `repository.updateAutoSyncInterval` call
-        if (repository['autoSyncTimer'] !== undefined) {
-            break;
-        }
-        /* c8 ignore next 2*/
-        await delay(3);
-    }
-    assert.notEqual(repository['autoSyncTimer'], undefined);
-    sandbox.restore();
-}
-
-export async function fossilOpenForce(
-    sandbox: sinon.SinonSandbox
-): Promise<void> {
-    const { rootPath, fossilPath, executable, openStub, sod } =
-        await setupFossilOpen(sandbox);
-
-    const swm = (
-        sandbox.stub(window, 'showWarningMessage') as sinon.SinonStub
-    ).resolves('&&Open Repository');
-
-    await vscode.commands.executeCommand('fossil.open');
-    sinon.assert.calledTwice(sod);
-    sinon.assert.calledOnceWithExactly(
-        swm,
-        `The directory ${rootPath.fsPath} is not empty.\n` +
-            'Open repository here anyway?',
-        { modal: true },
-        '&&Open Repository'
-    );
-    sinon.assert.calledTwice(openStub);
-    sinon.assert.calledWithExactly(
-        openStub.firstCall,
-        rootPath.fsPath as FossilCWD,
-        ['open', fossilPath.fsPath as FossilPath]
-    );
-    sinon.assert.calledWithExactly(
-        openStub.secondCall,
-        rootPath.fsPath as FossilCWD,
-        ['open', fossilPath.fsPath as FossilPath, '--force']
-    );
-    // on some systems 'info' is not available immediately
-    let res: ExecResult;
-    for (let i = 0; i < 10; ++i) {
-        res = await executable.exec(rootPath.fsPath as FossilCWD, ['info']);
-        if (/check-ins:\s+1\s*$/.test(res.stdout)) {
-            break;
-        }
-        /* c8 ignore next 2 */
-        await delay((i + 1) * 111);
-    }
-    assert.match(res!.stdout, /check-ins:\s+1\s*$/);
-    sandbox.restore();
-}
-
 export async function add(
     filename: string,
     content: string,
-    commitMessage: string,
-    action: 'ADDED' | 'SKIP' = 'ADDED'
+    commitMessage: string
 ): Promise<Uri> {
     const repository = getRepository();
     const openedRepository: OpenedRepository = (repository as any).repository;
 
     const rootUri = vscode.workspace.workspaceFolders![0].uri;
     const fileUri = Uri.joinPath(rootUri, filename);
+    const isNewFile = !fs.existsSync(fileUri.fsPath);
     await fs.promises.writeFile(fileUri.fsPath, content);
-    const addRes = await openedRepository.exec([
-        'add',
-        '--',
-        filename as RelativePath,
-    ]);
-    assert.match(
-        addRes.stdout.trimEnd(),
-        new RegExp(`${action}\\s+${filename}`)
-    );
+    if (isNewFile) {
+        const addRes = await openedRepository.exec([
+            'add',
+            '--',
+            filename as RelativePath,
+        ]);
+        assert.equal(addRes.stdout.trimEnd(), `added ${filename}`);
+    }
     const commitRes = await openedRepository.exec([
         'commit',
         '-m',
-        commitMessage as FossilCommitMessage,
+        commitMessage as ZitCommitMessage,
         '--',
         filename as RelativePath,
     ]);
     assert.equal(commitRes.exitCode, 0, 'Commit failed');
+    const statusResult = await repository.updateStatus(
+        'Test: refresh after add commit' as Reason
+    );
+    assert.equal(statusResult, undefined);
     return fileUri;
 }
 
-export async function cleanupFossil(repository: Repository): Promise<void> {
+export async function cleanupZit(repository: Repository): Promise<void> {
     const openedRepository: OpenedRepository = (repository as any).repository;
+    const refreshed = await repository.updateStatus(
+        'Test: refresh before cleanupZit' as Reason
+    );
+    assert.equal(refreshed, undefined);
+    const working = repository.workingGroup.resourceStates.map(resource =>
+        repository.mapFileUriToRepoRelativePath(resource.resourceUri)
+    );
+    const added = repository.addedGroup.resourceStates.map(resource =>
+        repository.mapFileUriToRepoRelativePath(resource.resourceUri)
+    );
     if (
-        repository.workingGroup.resourceStates.length ||
-        repository.stagingGroup.resourceStates.length ||
+        working.length ||
+        added.length ||
         repository.untrackedGroup.resourceStates.length
     ) {
-        const revertRes = await openedRepository.exec(['revert', '--']);
-        assert.equal(revertRes.exitCode, 0);
-
+        if (added.length) {
+            const forgetRes = await openedRepository.exec([
+                'rm',
+                '--',
+                ...added,
+            ]);
+            assert.equal(forgetRes.exitCode, 0);
+        }
+        if (working.length) {
+            const revertRes = await openedRepository.exec([
+                'revert',
+                '--',
+                ...working,
+            ]);
+            assert.equal(revertRes.exitCode, 0);
+        }
         const cleanRes1 = await openedRepository.exec(
-            ['clean', '--verbose'],
-            'Test: cleanupFossil' as Reason
+            ['clean', '--force'],
+            'Test: cleanupZit' as Reason
         );
         assert.equal(cleanRes1.exitCode, 0);
 
         const updateRes = await repository.updateStatus(
-            'Test: cleanupFossil' as Reason
+            'Test: cleanupZit' as Reason
         );
         assert.equal(updateRes, undefined);
         // if we fail on the next line, it could be that there's fake status
-        assertGroups(repository, {}, 'Cleanup failed inside `cleanupFossil`');
+        assertGroups(repository, {}, 'Cleanup failed inside `cleanupZit`');
     } else {
         assertGroups(repository, {}, 'Totally unexpected state');
     }
@@ -414,13 +329,12 @@ export function assertGroups(
     repository: Repository,
     groups: {
         working?: Readonly<[string, ResourceStatus]>[];
-        staging?: Readonly<[string, ResourceStatus]>[];
+        added?: Readonly<[string, ResourceStatus]>[];
         untracked?: Readonly<[string, ResourceStatus]>[];
-        conflict?: Readonly<[string, ResourceStatus]>[];
     },
     message?: string
 ): void {
-    const group_to_map = (grp: FossilResourceGroup) => {
+    const group_to_map = (grp: ZitResourceGroup) => {
         return new Map<string, ResourceStatus>(
             grp.resourceStates.map(res => [res.resourceUri.fsPath, res.status])
         );
@@ -428,15 +342,13 @@ export function assertGroups(
     assert.deepStrictEqual(
         new Map([
             ['working', group_to_map(repository.workingGroup)],
-            ['staging', group_to_map(repository.stagingGroup)],
+            ['added', group_to_map(repository.addedGroup)],
             ['untracked', group_to_map(repository.untrackedGroup)],
-            ['conflict', group_to_map(repository.conflictGroup)],
         ]),
         new Map([
             ['working', new Map(groups.working)],
-            ['staging', new Map(groups.staging)],
+            ['added', new Map(groups.added)],
             ['untracked', new Map(groups.untracked)],
-            ['conflict', new Map(groups.conflict)],
         ]),
         message
     );
@@ -449,7 +361,7 @@ export function statusBarCommands() {
     return commands;
 }
 
-export function stubFossilConfig(sandbox: sinon.SinonSandbox) {
+export function stubZitConfig(sandbox: sinon.SinonSandbox) {
     const configStub = {
         update: sinon.stub(),
         get: sinon.stub(),
@@ -474,7 +386,7 @@ export function stubFossilConfig(sandbox: sinon.SinonSandbox) {
     sandbox
         .stub(vscode.workspace, 'getConfiguration')
         .callThrough()
-        .withArgs('fossil')
+        .withArgs('zit')
         .returns(configStub as any);
     return configStub;
 }

@@ -7,25 +7,38 @@
 'use strict';
 
 import { Uri } from 'vscode';
-import { FossilCheckin } from './openedRepository';
+import type { ZitCheckin } from './openedRepository';
 
-export interface FossilUriParams {
+export interface ZitUriParams {
     // full filesystem path
     path: string;
-    checkin: FossilCheckin;
+    checkin?: ZitCheckin;
+    empty?: true;
 }
 
-export function fromFossilUri(uri: Uri): FossilUriParams {
+export function fromZitUri(uri: Uri): ZitUriParams {
     return JSON.parse(uri.query);
 }
 
-export function toFossilUri(uri: Uri, checkin: FossilCheckin = 'current'): Uri {
-    const params: FossilUriParams = {
+export function toZitUri(uri: Uri, checkin: ZitCheckin = 'current'): Uri {
+    const params: ZitUriParams = {
         path: uri.fsPath,
         checkin: checkin,
     };
     return uri.with({
-        scheme: 'fossil',
+        scheme: 'zit',
+        path: uri.path,
+        query: JSON.stringify(params),
+    });
+}
+
+export function toZitEmptyUri(uri: Uri): Uri {
+    const params: ZitUriParams = {
+        path: uri.fsPath,
+        empty: true,
+    };
+    return uri.with({
+        scheme: 'zit',
         path: uri.path,
         query: JSON.stringify(params),
     });

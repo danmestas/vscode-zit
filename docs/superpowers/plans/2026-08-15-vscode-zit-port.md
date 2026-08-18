@@ -6,7 +6,7 @@
 
 **Architecture:** Import vscode-fossil 0.7.6 as the baseline, retain its VS Code-facing model/interaction/resource layers, and replace the executable, repository-discovery, command, and output-parsing boundary with Zit-specific code. Do not add a generic multi-VCS abstraction: `ZitExecutable` and `OpenedRepository` are the deep modules that hide Zit argv, exit codes, repository layout, and text formats from the UI. Remove Fossil-only staging, wiki, web-UI, patch, checkout-close, private-branch, and tag-cancel surfaces rather than emulating unsupported behavior.
 
-**Tech Stack:** TypeScript, VS Code Extension API, Node.js 18, esbuild, Mocha/Sinon, `@vscode/test-electron`, Zit 0.1.3 for the initial CI contract.
+**Tech Stack:** TypeScript, VS Code Extension API, Node.js 24 LTS, esbuild, Mocha/Sinon, `@vscode/test-electron`, Zit 0.1.3 for the initial CI contract.
 
 ---
 
@@ -404,7 +404,7 @@ https://fossil.craftdesign.group/zit/uv/releases/0.1.3/zit-0.1.3-linux-x86_64.ta
 sha256 cf4643218af87dc4c032e60ca9da0e2b768ce11c643ed74284de4339b0468979
 ```
 
-Run `zit version` and require `zit 0.1.3` before tests. Keep Node 18, `npm ci`, SARIF lint, `xvfb-run -a npm run coverage-ci`, grammar tests, and VSIX packaging.
+Run `zit version` and require `zit 0.1.3` before tests. Use the current Node 24 LTS line with `npm ci`, SARIF lint, `xvfb-run -a npm run coverage-ci`, grammar tests, and VSIX packaging.
 
 - [ ] **Step 4: Rewrite user documentation from exercised workflows**
 

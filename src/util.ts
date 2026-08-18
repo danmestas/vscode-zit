@@ -81,17 +81,6 @@ export function eventToPromise<T>(event: Event<T>): Promise<T> {
     return new Promise(c => once(event)(c));
 }
 
-export function groupBy<T>(
-    arr: T[],
-    fn: (el: T) => string
-): { [key: string]: T[] } {
-    return arr.reduce((result, el) => {
-        const key = fn(el);
-        result[key] = [...(result[key] || []), el];
-        return result;
-    }, Object.create(null));
-}
-
 export function partition<T>(
     array: T[],
     fn: (el: T, i: number, ary: T[]) => boolean

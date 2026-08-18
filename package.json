@@ -1,28 +1,18 @@
 {
-    "name": "fossil",
-    "publisher": "koog1000",
-    "displayName": "Fossil",
-    "description": "Integrated Fossil source control",
+    "name": "zit",
+    "publisher": "danmestas",
+    "displayName": "Zit",
+    "description": "Integrated Zit source control",
     "galleryBanner": {
         "color": "#999999",
         "theme": "dark"
     },
-    "homepage": "https://github.com/koog1000/vscode-fossil",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/koog1000/vscode-fossil.git"
-    },
-    "bugs": {
-        "url": "https://github.com/koog1000/vscode-fossil/issues"
-    },
     "version": "0.7.6",
     "engines": {
-        "vscode": "^1.36.0"
+        "vscode": "^1.125.0"
     },
     "keywords": [
-        "fossil-scm",
-        "fossil",
+        "zit",
         "source",
         "scm"
     ],
@@ -38,1069 +28,1053 @@
     "contributes": {
         "commands": [
             {
-                "command": "fossil.add",
+                "command": "zit.add",
                 "title": "%command.add%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(plus)"
             },
             {
-                "command": "fossil.addAll",
+                "command": "zit.addAll",
                 "title": "%command.addAll%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(plus)"
             },
             {
-                "command": "fossil.ignore",
+                "command": "zit.ignore",
                 "title": "%command.ignore%",
-                "category": "Fossil",
-                "icon": "$(discard)"
+                "category": "Zit"
             },
             {
-                "command": "fossil.branch",
+                "command": "zit.branch",
                 "title": "%command.branch%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.clean",
+                "command": "zit.clean",
                 "title": "%command.clean%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.revert",
+                "command": "zit.revert",
                 "title": "%command.revert%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(discard)"
             },
             {
-                "command": "fossil.revertAll",
+                "command": "zit.revertAll",
                 "title": "%command.revertAll%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(discard)"
             },
             {
-                "command": "fossil.commit",
+                "command": "zit.commit",
                 "title": "%command.commit%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(check)"
             },
             {
-                "command": "fossil.deleteFiles",
-                "title": "Delete All Untracked Files",
-                "category": "Fossil",
-                "icon": "$(trash)"
-            },
-            {
-                "command": "fossil.deleteFile",
-                "title": "Delete Untracked File",
-                "category": "Fossil",
-                "icon": "$(trash)"
-            },
-            {
-                "command": "fossil.commitAll",
+                "command": "zit.commitAll",
                 "title": "%command.commitAll%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.commitStaged",
-                "title": "%command.commitStaged%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.commitBranch",
+                "command": "zit.commitBranch",
                 "title": "%command.commitBranch%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.clone",
+                "command": "zit.clone",
                 "title": "%command.clone%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.fileLog",
+                "command": "zit.fileLog",
                 "title": "%command.fileLog%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.render",
-                "title": "%command.render%",
-                "category": "Fossil",
-                "icon": "$(open-preview)"
+                "command": "zit.timelineFile",
+                "title": "%command.timelineFile%",
+                "category": "Zit",
+                "icon": "$(history)"
             },
             {
-                "command": "fossil.wikiCreate",
-                "title": "%command.wikiCreate%",
-                "category": "Fossil",
-                "icon": "$(cloud-upload)"
+                "command": "zit.timelineProject",
+                "title": "%command.timelineProject%",
+                "category": "Zit",
+                "icon": "$(repo)"
             },
             {
-                "command": "fossil.forget",
-                "title": "%command.forget%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.relocate",
-                "title": "%command.relocate%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.init",
-                "title": "%command.init%",
-                "category": "Fossil",
-                "icon": {
-                    "light": "icon.png",
-                    "dark": "icon.png"
-                }
-            },
-            {
-                "command": "fossil.open",
-                "title": "%command.open%",
-                "category": "Fossil",
-                "icon": {
-                    "light": "icon.png",
-                    "dark": "icon.png"
-                }
-            },
-            {
-                "command": "fossil.close",
-                "title": "%command.close%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.closeBranch",
-                "title": "Close branch...",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.log",
-                "title": "%command.log%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.openChange",
-                "title": "%command.openChange%",
-                "category": "Fossil",
-                "icon": {
-                    "light": "resources/icons/light/open-change.svg",
-                    "dark": "resources/icons/dark/open-change.svg"
-                }
-            },
-            {
-                "command": "fossil.openChangeFromUri",
-                "title": "%command.openChange%",
-                "category": "Fossil",
-                "icon": {
-                    "light": "resources/icons/light/open-change.svg",
-                    "dark": "resources/icons/dark/open-change.svg"
-                }
-            },
-            {
-                "command": "fossil.openFile",
-                "title": "%command.openFile%",
-                "category": "Fossil",
-                "icon": "$(go-to-file)"
-            },
-            {
-                "command": "fossil.openFiles",
-                "title": "%command.openFiles%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.openFileFromUri",
-                "title": "%command.openFile%",
-                "category": "Fossil",
-                "icon": "$(go-to-file)"
-            },
-            {
-                "command": "fossil.openUI",
-                "title": "%command.openUI%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.update",
-                "title": "%command.update%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.pull",
-                "title": "%command.pull%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.push",
-                "title": "%command.push%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.pushTo",
-                "title": "%command.pushTo%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.refresh",
+                "command": "zit.timelineRefresh",
                 "title": "%command.refresh%",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(refresh)"
             },
             {
-                "command": "fossil.reopenBranch",
-                "title": "Reopen branch...",
-                "category": "Fossil",
+                "command": "zit.timelineLoadMore",
+                "title": "%command.timelineLoadMore%",
+                "category": "Zit",
+                "icon": "$(ellipsis)"
+            },
+            {
+                "command": "zit.timelineOpen",
+                "title": "%command.timelineOpen%",
+                "category": "Zit",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "zit.timelineCompare",
+                "title": "%command.timelineCompare%",
+                "category": "Zit",
+                "icon": "$(compare-changes)"
+            },
+            {
+                "command": "zit.forget",
+                "title": "%command.forget%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.rename",
+                "title": "%command.rename%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.init",
+                "title": "%command.init%",
+                "category": "Zit",
+                "icon": {
+                    "light": "icon.png",
+                    "dark": "icon.png"
+                }
+            },
+            {
+                "command": "zit.open",
+                "title": "%command.open%",
+                "category": "Zit",
+                "icon": {
+                    "light": "icon.png",
+                    "dark": "icon.png"
+                }
+            },
+            {
+                "command": "zit.closeBranch",
+                "title": "Close branch...",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagShow",
+                "title": "%command.tagShow%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagShowForCheckin",
+                "title": "%command.tagShowForCheckin%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagAdd",
+                "title": "%command.tagAdd%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.tagCancel",
+                "title": "%command.tagCancel%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.log",
+                "title": "%command.log%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.openChange",
+                "title": "%command.openChange%",
+                "category": "Zit",
+                "icon": {
+                    "light": "resources/icons/light/open-change.svg",
+                    "dark": "resources/icons/dark/open-change.svg"
+                }
+            },
+            {
+                "command": "zit.openChangeFromUri",
+                "title": "%command.openChange%",
+                "category": "Zit",
+                "icon": {
+                    "light": "resources/icons/light/open-change.svg",
+                    "dark": "resources/icons/dark/open-change.svg"
+                }
+            },
+            {
+                "command": "zit.openFile",
+                "title": "%command.openFile%",
+                "category": "Zit",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "zit.openFiles",
+                "title": "%command.openFiles%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.openFileFromUri",
+                "title": "%command.openFile%",
+                "category": "Zit",
+                "icon": "$(go-to-file)"
+            },
+            {
+                "command": "zit.update",
+                "title": "%command.update%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.pull",
+                "title": "%command.pull%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.push",
+                "title": "%command.push%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.pushTo",
+                "title": "%command.pushTo%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.refresh",
+                "title": "%command.refresh%",
+                "category": "Zit",
                 "icon": "$(refresh)"
             },
             {
-                "command": "fossil.showOutput",
+                "command": "zit.showOutput",
                 "title": "%command.showOutput%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.stage",
-                "title": "%command.stage%",
-                "category": "Fossil",
-                "icon": "$(plus)"
-            },
-            {
-                "command": "fossil.stageAll",
-                "title": "%command.stageAll%",
-                "category": "Fossil",
-                "icon": "$(plus)"
-            },
-            {
-                "command": "fossil.sync",
+                "command": "zit.sync",
                 "title": "%command.sync%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.undo",
+                "command": "zit.undo",
                 "title": "%command.undo%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.redo",
+                "command": "zit.redo",
                 "title": "%command.redo%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.unstage",
-                "title": "%command.unstage%",
-                "category": "Fossil",
-                "icon": "$(remove)"
-            },
-            {
-                "command": "fossil.unstageAll",
-                "title": "%command.unstageAll%",
-                "category": "Fossil",
-                "icon": "$(remove)"
-            },
-            {
-                "command": "fossil.branchChange",
+                "command": "zit.branchChange",
                 "title": "%command.branchChange%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.revertChange",
+                "command": "zit.compare",
+                "title": "%command.compare%",
+                "category": "Zit",
+                "icon": "$(compare-changes)"
+            },
+            {
+                "command": "zit.revertChange",
                 "title": "Revert Change",
-                "category": "Fossil",
+                "category": "Zit",
                 "icon": "$(discard)"
             },
             {
-                "command": "fossil.merge",
+                "command": "zit.merge",
                 "title": "%command.merge%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.integrate",
-                "title": "%command.integrate%",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.cherrypick",
+                "command": "zit.cherrypick",
                 "title": "%command.cherrypick%",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.patchCreate",
-                "title": "Create Patch",
-                "category": "Fossil"
+                "command": "zit.stashShow",
+                "title": "Stash Show",
+                "category": "Zit"
             },
             {
-                "command": "fossil.patchApply",
-                "title": "Apply Patch",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.stashSnapshot",
-                "title": "Stash Snapshot",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.stashSave",
+                "command": "zit.stashSave",
                 "title": "Stash Push",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.stashPop",
+                "command": "zit.stashPop",
                 "title": "Stash Pop",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.stashApply",
+                "command": "zit.stashApply",
                 "title": "Stash Apply",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.stashDrop",
+                "command": "zit.stashDrop",
                 "title": "Stash Drop",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.praise",
-                "title": "Praise (blame)",
-                "category": "Fossil"
+                "command": "zit.praise",
+                "title": "Praise",
+                "category": "Zit"
             },
             {
-                "command": "fossil.gitPublish",
-                "title": "Publish to GitHub/Git",
-                "category": "Fossil"
-            },
-            {
-                "command": "fossil.gitExport",
+                "command": "zit.gitExport",
                 "title": "Export git",
-                "category": "Fossil"
+                "category": "Zit"
             },
             {
-                "command": "fossil.renderSave",
-                "title": "Save As...",
-                "category": "Fossil",
-                "icon": "$(save-as)"
+                "command": "zit.showRemote",
+                "title": "%command.showRemote%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.setRemote",
+                "title": "%command.setRemote%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.clearRemote",
+                "title": "%command.clearRemote%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeOpen",
+                "title": "%command.worktreeOpen%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeOpenNewWindow",
+                "title": "%command.worktreeOpenNewWindow%",
+                "category": "Zit"
+            },
+            {
+                "command": "zit.worktreeCreate",
+                "title": "%command.worktreeCreate%",
+                "category": "Zit"
             }
         ],
+        "views": {
+            "explorer": [
+                {
+                    "id": "zit.timeline",
+                    "name": "%view.timeline%",
+                    "when": "zitOpenRepositoryCount",
+                    "visibility": "visible"
+                }
+            ]
+        },
         "menus": {
+            "explorer/context": [
+                {
+                    "command": "zit.ignore",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file",
+                    "group": "1_modification@3"
+                },
+                {
+                    "command": "zit.timelineFile",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file",
+                    "group": "navigation@9"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "zit.timelineProject",
+                    "when": "view == zit.timeline && zitOpenRepositoryCount",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "zit.timelineRefresh",
+                    "when": "view == zit.timeline && zitOpenRepositoryCount",
+                    "group": "navigation@2"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "zit.timelineCompare",
+                    "when": "view == zit.timeline && viewItem == zitTimelineCommit",
+                    "group": "inline@1"
+                }
+            ],
             "commandPalette": [
                 {
-                    "command": "fossil.clone",
-                    "when": "fossil.found"
-                },
-                {
-                    "command": "fossil.init",
-                    "when": "fossil.found"
-                },
-                {
-                    "command": "fossil.openUI",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.refresh",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.openChange",
+                    "command": "zit.timelineLoadMore",
                     "when": "false"
                 },
                 {
-                    "command": "fossil.openFile",
+                    "command": "zit.timelineOpen",
                     "when": "false"
                 },
                 {
-                    "command": "fossil.openFiles",
+                    "command": "zit.timelineCompare",
                     "when": "false"
                 },
                 {
-                    "command": "fossil.openChangeFromUri",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.openFileFromUri",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stage",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stageAll",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.unstage",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.unstageAll",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.revert",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.revertAll",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.commit",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.commitStaged",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.commitAll",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.commitBranch",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.undo",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.redo",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.branchChange",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.branch",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.pull",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.update",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.push",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.pushTo",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.merge",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.integrate",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.cherrypick",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.showOutput",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.fileLog",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.log",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.patchApply",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.patchCreate",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stashApply",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stashDrop",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stashPop",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stashSave",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.stashSnapshot",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.clean",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.add",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.addAll",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.ignore",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.close",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.closeBranch",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.forget",
-                    "when": "fossilOpenRepositoryCount"
-                },
-                {
-                    "command": "fossil.relocate",
+                    "command": "zit.timelineRefresh",
                     "when": "false"
                 },
                 {
-                    "command": "fossil.revertChange",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.clone",
+                    "when": "zit.found"
                 },
                 {
-                    "command": "fossil.reopenBranch",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.init",
+                    "when": "zit.found"
                 },
                 {
-                    "command": "fossil.wikiCreate",
-                    "when": "fossilOpenRepositoryCount && activeWebviewPanelId == fossil.renderPanel"
+                    "command": "zit.refresh",
+                    "when": "zitOpenRepositoryCount"
                 },
                 {
-                    "command": "fossil.render",
-                    "when": "fossil.found && resourcePath"
+                    "command": "zit.openChange",
+                    "when": "false"
                 },
                 {
-                    "command": "fossil.deleteFiles",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.openFile",
+                    "when": "false"
                 },
                 {
-                    "command": "fossil.deleteFile",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.openFiles",
+                    "when": "false"
                 },
                 {
-                    "command": "fossil.praise",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.openChangeFromUri",
+                    "when": "zitOpenRepositoryCount"
                 },
                 {
-                    "command": "fossil.gitPublish",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.openFileFromUri",
+                    "when": "zitOpenRepositoryCount"
                 },
                 {
-                    "command": "fossil.gitExport",
-                    "when": "fossilOpenRepositoryCount"
+                    "command": "zit.ignore",
+                    "when": "zitOpenRepositoryCount && resourceScheme == file"
                 },
                 {
-                    "command": "fossil.open",
-                    "when": "fossil.found"
+                    "command": "zit.revert",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.revertAll",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.commit",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.commitAll",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.commitBranch",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.undo",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.redo",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.branchChange",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.compare",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.branch",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.pull",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.update",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.push",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.pushTo",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.merge",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.cherrypick",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.showOutput",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.fileLog",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.log",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.stashApply",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.stashDrop",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.stashPop",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.stashSave",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.stashShow",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.clean",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.add",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.addAll",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.closeBranch",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagAdd",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagShow",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagShowForCheckin",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.tagCancel",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.forget",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.rename",
+                    "when": "false"
+                },
+                {
+                    "command": "zit.revertChange",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.praise",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.gitExport",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.showRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.setRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.clearRemote",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.worktreeOpen",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.worktreeOpenNewWindow",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.worktreeCreate",
+                    "when": "zitOpenRepositoryCount"
+                },
+                {
+                    "command": "zit.open",
+                    "when": "zit.found"
                 }
             ],
             "scm/title": [
                 {
-                    "command": "fossil.init",
+                    "command": "zit.init",
                     "group": "navigation",
-                    "when": "fossil.found && !scmProvider && fossilOpenRepositoryCount == 0"
+                    "when": "zit.found && !scmProvider && zitOpenRepositoryCount == 0"
                 },
                 {
-                    "command": "fossil.open",
+                    "command": "zit.open",
                     "group": "9_open",
-                    "when": "fossil.found && !scmProvider && fossilOpenRepositoryCount == 0"
+                    "when": "zit.found && !scmProvider && zitOpenRepositoryCount == 0"
                 },
                 {
-                    "command": "fossil.clone",
-                    "when": "fossil.found",
+                    "command": "zit.clone",
+                    "when": "zit.found",
                     "group": "9_open"
                 },
                 {
-                    "command": "fossil.commit",
+                    "command": "zit.commit",
                     "group": "navigation",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.refresh",
+                    "command": "zit.refresh",
                     "group": "navigation",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.update",
+                    "command": "zit.update",
                     "group": "1_sync@1",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.sync",
+                    "command": "zit.sync",
                     "group": "1_sync@2",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.pull",
+                    "command": "zit.pull",
                     "group": "1_sync@3",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.push",
+                    "command": "zit.push",
                     "group": "1_sync@4",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.pushTo",
+                    "command": "zit.pushTo",
                     "group": "1_sync@5",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.undo",
+                    "command": "zit.undo",
                     "group": "3_commit@0",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.redo",
+                    "command": "zit.redo",
                     "group": "3_commit@1",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "submenu": "fossil.commit",
-                    "when": "scmProvider == fossil",
+                    "submenu": "zit.commit",
+                    "when": "scmProvider == zit",
                     "group": "5_groups@0"
                 },
                 {
-                    "submenu": "fossil.merge",
-                    "when": "scmProvider == fossil",
+                    "submenu": "zit.merge",
+                    "when": "scmProvider == zit",
                     "group": "5_groups@1"
                 },
                 {
-                    "submenu": "fossil.stash",
-                    "when": "scmProvider == fossil",
+                    "submenu": "zit.stash",
+                    "when": "scmProvider == zit",
                     "group": "5_groups@2"
                 },
                 {
-                    "submenu": "fossil.timeline",
-                    "when": "scmProvider == fossil",
+                    "submenu": "zit.timeline",
+                    "when": "scmProvider == zit",
                     "group": "5_groups@3"
                 },
                 {
-                    "submenu": "fossil.patch",
-                    "when": "scmProvider == fossil",
+                    "submenu": "zit.remote",
+                    "when": "scmProvider == zit",
                     "group": "5_groups@4"
                 },
                 {
-                    "command": "fossil.showOutput",
+                    "submenu": "zit.worktree",
+                    "when": "scmProvider == zit",
+                    "group": "5_groups@5"
+                },
+                {
+                    "submenu": "zit.tag",
+                    "when": "scmProvider == zit",
+                    "group": "5_groups@6"
+                },
+                {
+                    "command": "zit.showOutput",
                     "group": "6_output",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 }
             ],
-            "fossil.commit": [
+            "zit.commit": [
                 {
-                    "command": "fossil.commitStaged",
-                    "group": "commit@0",
-                    "when": "scmProvider == fossil"
-                },
-                {
-                    "command": "fossil.commitAll",
+                    "command": "zit.commitAll",
                     "group": "commit@1",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 },
                 {
-                    "command": "fossil.commitBranch",
+                    "command": "zit.commitBranch",
                     "group": "commit@2",
-                    "when": "scmProvider == fossil"
+                    "when": "scmProvider == zit"
                 }
             ],
-            "fossil.merge": [
+            "zit.merge": [
                 {
-                    "command": "fossil.merge",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.merge",
+                    "when": "scmProvider == zit",
                     "group": "merge@0"
                 },
                 {
-                    "command": "fossil.integrate",
-                    "when": "scmProvider == fossil",
-                    "group": "merge@1"
-                },
-                {
-                    "command": "fossil.cherrypick",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.cherrypick",
+                    "when": "scmProvider == zit",
                     "group": "merge@2"
                 }
             ],
-            "fossil.timeline": [
+            "zit.timeline": [
                 {
-                    "command": "fossil.log",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.log",
+                    "when": "scmProvider == zit",
                     "group": "log@0"
                 },
                 {
-                    "command": "fossil.fileLog",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.fileLog",
+                    "when": "scmProvider == zit",
                     "group": "log@1"
-                }
-            ],
-            "fossil.patch": [
-                {
-                    "command": "fossil.patchCreate",
-                    "when": "scmProvider == fossil",
-                    "group": "patch@0"
                 },
                 {
-                    "command": "fossil.patchApply",
-                    "when": "scmProvider == fossil",
-                    "group": "patch@1"
+                    "command": "zit.compare",
+                    "when": "scmProvider == zit",
+                    "group": "log@2"
                 }
             ],
-            "fossil.stash": [
+            "zit.tag": [
                 {
-                    "command": "fossil.stashSnapshot",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.tagShow",
+                    "when": "scmProvider == zit",
+                    "group": "tag@0"
+                },
+                {
+                    "command": "zit.tagShowForCheckin",
+                    "when": "scmProvider == zit",
+                    "group": "tag@1"
+                },
+                {
+                    "command": "zit.tagAdd",
+                    "when": "scmProvider == zit",
+                    "group": "tag@2"
+                },
+                {
+                    "command": "zit.tagCancel",
+                    "when": "scmProvider == zit",
+                    "group": "tag@3"
+                }
+            ],
+            "zit.remote": [
+                {
+                    "command": "zit.showRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@0"
+                },
+                {
+                    "command": "zit.setRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@1"
+                },
+                {
+                    "command": "zit.clearRemote",
+                    "when": "scmProvider == zit",
+                    "group": "remote@2"
+                }
+            ],
+            "zit.worktree": [
+                {
+                    "command": "zit.worktreeOpen",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@0"
+                },
+                {
+                    "command": "zit.worktreeOpenNewWindow",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@1"
+                },
+                {
+                    "command": "zit.worktreeCreate",
+                    "when": "scmProvider == zit",
+                    "group": "worktree@2"
+                }
+            ],
+            "zit.stash": [
+                {
+                    "command": "zit.stashShow",
+                    "when": "scmProvider == zit",
                     "group": "stash@0"
                 },
                 {
-                    "command": "fossil.stashSave",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.stashSave",
+                    "when": "scmProvider == zit",
                     "group": "stash@1"
                 },
                 {
-                    "command": "fossil.stashPop",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.stashPop",
+                    "when": "scmProvider == zit",
                     "group": "stash@2"
                 },
                 {
-                    "command": "fossil.stashApply",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.stashApply",
+                    "when": "scmProvider == zit",
                     "group": "stash@3"
                 },
                 {
-                    "command": "fossil.stashDrop",
-                    "when": "scmProvider == fossil",
+                    "command": "zit.stashDrop",
+                    "when": "scmProvider == zit",
                     "group": "stash@4"
                 }
             ],
             "scm/change/title": [
                 {
-                    "command": "fossil.revertChange",
-                    "when": "fossil.found && originalResourceScheme == fossil"
-                }
-            ],
-            "scm/sourceControl": [
-                {
-                    "command": "fossil.close",
-                    "group": "navigation",
-                    "when": "fossil.found && scmProvider == fossil"
+                    "command": "zit.revertChange",
+                    "when": "zit.found && originalResourceScheme == zit"
                 }
             ],
             "scm/resourceGroup/context": [
                 {
-                    "command": "fossil.unstageAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.revertAll",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.unstageAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.revertAll",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "inline"
                 },
                 {
-                    "command": "fossil.revertAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.addAll",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.stageAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.clean",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.stageAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
-                    "group": "inline"
-                },
-                {
-                    "command": "fossil.revertAll",
-                    "when": "fossil.found && scmProvider == fossil && (scmResourceGroup == working || scmResourceGroup == conflict)",
-                    "group": "inline"
-                },
-                {
-                    "command": "fossil.addAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.clean",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.deleteFiles",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "inline@0"
-                },
-                {
-                    "command": "fossil.addAll",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
+                    "command": "zit.addAll",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "inline@1"
                 },
                 {
-                    "command": "fossil.openFiles",
-                    "when": "fossil.found && scmProvider == fossil",
+                    "command": "zit.openFiles",
+                    "when": "zit.found && scmProvider == zit",
                     "group": "navigation"
                 },
                 {
-                    "command": "fossil.openChange",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "command": "zit.openChange",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup != untracked",
                     "group": "navigation"
                 }
             ],
             "scm/resourceState/context": [
                 {
-                    "command": "fossil.openChange",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.openChange",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "navigation"
                 },
                 {
-                    "command": "fossil.unstage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.revert",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup != untracked",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.unstage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
-                    "group": "inline"
-                },
-                {
-                    "command": "fossil.openChange",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
-                    "group": "navigation"
-                },
-                {
-                    "command": "fossil.stage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.revert",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.openFile",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "command": "zit.openFile",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup != untracked",
                     "group": "inline@0"
                 },
                 {
-                    "command": "fossil.revert",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "command": "zit.revert",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup != untracked",
                     "group": "inline@1"
                 },
                 {
-                    "command": "fossil.stage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.add",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "inline@2"
                 },
                 {
-                    "command": "fossil.deleteFile",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "inline@0"
+                    "command": "zit.ignore",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
+                    "group": "1_modification@3"
                 },
                 {
-                    "command": "fossil.add",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "inline@2"
-                },
-                {
-                    "command": "fossil.stage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.ignore",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.openFiles",
-                    "when": "fossil.found && scmProvider == fossil",
+                    "command": "zit.openFiles",
+                    "when": "zit.found && scmProvider == zit",
                     "group": "navigation"
                 },
                 {
-                    "command": "fossil.forget",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.forget",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "2_modification"
                 },
                 {
-                    "command": "fossil.relocate",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceState == MISSING",
+                    "command": "zit.rename",
+                    "when": "zit.found && scmProvider == zit && scmResourceState == MISSING",
                     "group": "2_modification"
                 }
             ],
             "scm/resourceFolder/context": [
                 {
-                    "command": "fossil.unstage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.revert",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.unstage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == staging",
+                    "command": "zit.revert",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == working",
                     "group": "inline"
                 },
                 {
-                    "command": "fossil.revert",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.add",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.stage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.clean",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "1_modification"
                 },
                 {
-                    "command": "fossil.stage",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
+                    "command": "zit.ignore",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
+                    "group": "1_modification@3"
+                },
+                {
+                    "command": "zit.add",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup == untracked",
                     "group": "inline"
                 },
                 {
-                    "command": "fossil.revert",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == working",
-                    "group": "inline"
-                },
-                {
-                    "command": "fossil.add",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.clean",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "1_modification"
-                },
-                {
-                    "command": "fossil.add",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup == untracked",
-                    "group": "inline"
-                },
-                {
-                    "command": "fossil.openFiles",
-                    "when": "fossil.found && scmProvider == fossil",
+                    "command": "zit.openFiles",
+                    "when": "zit.found && scmProvider == zit",
                     "group": "navigation"
                 },
                 {
-                    "command": "fossil.openChange",
-                    "when": "fossil.found && scmProvider == fossil && scmResourceGroup != untracked",
+                    "command": "zit.openChange",
+                    "when": "zit.found && scmProvider == zit && scmResourceGroup != untracked",
                     "group": "navigation"
                 }
             ],
             "editor/title": [
                 {
-                    "command": "fossil.openFileFromUri",
+                    "command": "zit.openFileFromUri",
                     "group": "navigation",
-                    "when": "fossilOpenRepositoryCount && isInDiffEditor && resourceScheme != extension && scmProvider == fossil"
+                    "when": "zitOpenRepositoryCount && isInDiffEditor && resourceScheme != extension && scmProvider == zit"
                 },
                 {
-                    "command": "fossil.openChangeFromUri",
+                    "command": "zit.openChangeFromUri",
                     "group": "navigation",
-                    "when": "fossilOpenRepositoryCount && !isInDiffEditor && resourceScheme == file && scmProvider == fossil"
+                    "when": "zitOpenRepositoryCount && !isInDiffEditor && resourceScheme == file && scmProvider == zit"
                 },
                 {
-                    "command": "fossil.fileLog",
-                    "when": "fossilOpenRepositoryCount && !isInDiffEditor"
-                },
-                {
-                    "command": "fossil.render",
-                    "when": "fossil.found && !isInDiffEditor && (resourceExtname =~ /^\\.(md|wiki|pikchr)$/ || resourceLangId == pikchr) || fossilOpenRepositoryCount && resourceScheme == untitled",
-                    "group": "navigation"
-                },
-                {
-                    "command": "fossil.wikiCreate",
-                    "when": "activeWebviewPanelId == fossil.renderPanel",
-                    "group": "navigation"
-                }
-            ],
-            "webview/context": [
-                {
-                    "command": "fossil.renderSave",
-                    "when": "webviewId == fossil.renderPanel"
+                    "command": "zit.fileLog",
+                    "when": "zitOpenRepositoryCount && !isInDiffEditor"
                 }
             ]
         },
-        "keybindings": [
-            {
-                "command": "fossil.renderSave",
-                "key": "ctrl+s",
-                "mac": "cmd+s",
-                "when": "webviewId == fossil.renderPanel"
-            }
-        ],
         "submenus": [
             {
-                "id": "fossil.merge",
+                "id": "zit.merge",
                 "label": "%submenu.merge%"
             },
             {
-                "id": "fossil.timeline",
+                "id": "zit.timeline",
                 "label": "%submenu.timeline%"
             },
             {
-                "id": "fossil.stash",
+                "id": "zit.tag",
+                "label": "%submenu.tag%"
+            },
+            {
+                "id": "zit.stash",
                 "label": "%submenu.stash%"
             },
             {
-                "id": "fossil.patch",
-                "label": "%submenu.patch%"
+                "id": "zit.remote",
+                "label": "%submenu.remote%"
             },
             {
-                "id": "fossil.commit",
+                "id": "zit.worktree",
+                "label": "%submenu.worktree%"
+            },
+            {
+                "id": "zit.commit",
                 "label": "%submenu.commit%"
             }
         ],
         "configuration": {
-            "title": "Fossil",
+            "title": "Zit",
             "properties": {
-                "fossil.autoSyncInterval": {
+                "zit.autoSyncInterval": {
                     "type": "number",
                     "markdownDescription": "%config.autoSyncInterval%",
                     "default": 180,
                     "minimum": 0
                 },
-                "fossil.autoRefresh": {
+                "zit.autoRefresh": {
                     "type": "boolean",
                     "description": "%config.autoRefresh%",
                     "default": true
                 },
-                "fossil.enableRenaming": {
+                "zit.enableRenaming": {
                     "type": "boolean",
                     "description": "%config.enableRenaming%",
                     "default": true
                 },
-                "fossil.ignoreMissingFossilWarning": {
+                "zit.ignoreMissingZitWarning": {
                     "type": "boolean",
-                    "description": "Ignores the warning when Fossil is missing",
+                    "description": "Ignores the warning when Zit is missing",
                     "default": false
                 },
-                "fossil.path": {
+                "zit.path": {
                     "type": "string",
                     "markdownDescription": "%config.path%",
                     "scope": "machine"
                 },
-                "fossil.username": {
+                "zit.username": {
                     "type": "string",
                     "markdownDescription": "%config.username%"
                 },
-                "fossil.defaultUsername": {
+                "zit.defaultUsername": {
                     "type": "string",
                     "markdownDescription": "%config.defaultUsername%"
                 },
-                "fossil.confirmGitExport": {
+                "zit.confirmGitExport": {
                     "type": "string",
                     "enum": [
                         "Automatically",
@@ -1108,34 +1082,26 @@
                         "Ask"
                     ],
                     "default": "Ask",
-                    "markdownDescription": "When repository was exported to git, ask to run `fossil export` after every commit"
+                    "markdownDescription": "When repository was exported to git, ask to run `zit export` after every commit"
                 },
-                "fossil.globalArgs": {
+                "zit.globalArgs": {
                     "type": "array",
-                    "items": { "type": "string"},
+                    "items": {
+                        "type": "string"
+                    },
                     "scope": "window",
-                    "markdownDescription": "Extra arguments added to each `fossil` command (see `fossil help -o`)"
+                    "markdownDescription": "Extra arguments added to each `zit` command (see `zit help -o`)"
                 },
-                "fossil.commitArgs": {
+                "zit.commitArgs": {
                     "type": "array",
-                    "items": { "type": "string"},
+                    "items": {
+                        "type": "string"
+                    },
                     "scope": "window",
-                    "markdownDescription": "Extra arguments added to `fossil commit` command (see `fossil help commit`)"
+                    "markdownDescription": "Extra arguments added to `zit commit` command (see `zit help commit`)"
                 }
             }
         },
-        "customEditors": [
-            {
-                "viewType": "fossil.previewWikiPanel",
-                "displayName": "Fossil Wiki Preview",
-                "priority": "option",
-                "selector": [
-                    {
-                        "filenamePattern": "*.{wiki,md,pikchr}"
-                    }
-                ]
-            }
-        ],
         "languages": [
             {
                 "id": "pikchr",
@@ -1173,50 +1139,44 @@
     "scripts": {
         "vscode:prepublish": "npm run bundle -- --minify",
         "bundle": "node ./esbuild.config.js",
-        "esbuild-preview": "esbuild ./media/preview.ts --bundle --outfile=media/preview.js --platform=browser --format=iife",
-        "compile": "npm run esbuild-preview && tsc -p ./",
-        "package": "vsce package --allow-star-activation",
+        "compile": "tsc -p ./",
+        "package": "vsce package --allow-star-activation --allow-missing-repository",
         "deploy": "vsce publish",
         "pretest": "npm run compile",
         "test": "node ./out/test/runTest.js",
         "coverage": "node ./node_modules/c8/bin/c8.js --reporter lcov --exclude [] --check-coverage npm run test",
         "coverage-ci": "node ./node_modules/c8/bin/c8.js --reporter json-summary --exclude [] --check-coverage npm run test && node ./out/test/summaryAsMarkdown.js coverage/coverage-summary.json",
-        "lint": "eslint ./src --ext .ts src media",
-        "lint:fix": "eslint --fix --ext .ts src media",
+        "lint": "eslint ./src --ext .ts",
+        "lint:fix": "eslint --fix ./src --ext .ts",
         "grammar-test": "vscode-tmgrammar-test ./pikchr/test/*.test.pikchr"
     },
     "dependencies": {
         "vscode-nls": "^5.0.1"
     },
     "devDependencies": {
+        "@eslint/js": "^10.0.1",
         "@microsoft/eslint-formatter-sarif": "^3.1.0",
-        "@octokit/rest": "^20.1.1",
-        "@types/mocha": "~10.0.9",
-        "@types/node": "^18",
-        "@types/sinon": "~17.0.3",
-        "@types/vscode": "^1.36.0",
-        "@types/vscode-webview": "^1.57.0",
-        "@typescript-eslint/eslint-plugin": "^7.6.0",
-        "@typescript-eslint/parser": "^7.6.0",
-        "@vscode/test-electron": "~2.4.1",
-        "@vscode/vsce": "~2.32.0",
-        "c8": "^10.1.2",
-        "esbuild": "~0.24.0",
-        "eslint": "^8.57.1",
-        "eslint-config-standard": "~17.0.0",
-        "eslint-plugin-import": "~2.27.5",
-        "eslint-plugin-n": "^15.7.0",
-        "eslint-plugin-prettier": "~4.2.1",
-        "eslint-plugin-promise": "~6.1.1",
-        "mocha": "~10.8.2",
-        "prettier": "~2.8.8",
-        "sinon": "~18.0.1",
-        "typescript": "^5.4.5",
+        "@types/mocha": "~10.0.10",
+        "@types/node": "^24.0.0",
+        "@types/sinon": "~22.0.0",
+        "@types/vscode": "1.125.0",
+        "@vscode/test-electron": "3.1.0",
+        "@vscode/vsce": "3.9.2",
+        "c8": "^12.0.0",
+        "esbuild": "~0.28.2",
+        "eslint": "^10.8.1",
+        "eslint-plugin-prettier": "~5.5.6",
+        "mocha": "~11.8.0",
+        "prettier": "~3.9.6",
+        "sinon": "~22.1.0",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.67.0",
         "vscode-tmgrammar-test": "^0.1.3"
     },
-    "__metadata": {
-        "id": "e828bfe6-95e7-4c7a-a334-ae2cc5ba8788",
-        "publisherDisplayName": "koog1000",
-        "publisherId": "8e4cabe1-5c1f-4bf5-bbf3-8bb8d5de842c"
+    "overrides": {
+        "mocha": {
+            "diff": "^9.0.0",
+            "serialize-javascript": "^7.1.0"
+        }
     }
 }

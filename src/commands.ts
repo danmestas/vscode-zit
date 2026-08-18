@@ -15,74 +15,61 @@ import {
     TextDocumentShowOptions,
     ViewColumn,
     Selection,
-    ExtensionContext,
     SourceControl,
     LogOutputChannel,
+    FileSystemError,
 } from 'vscode';
 import { LineChange, revertChanges } from './revert';
 import * as path from 'path';
 import {
-    FossilPath,
-    FossilURI,
-    FossilCheckin,
+    OpenedRepository,
+    ZitRoot,
+    ZitCheckin,
     MergeAction,
-    FossilHash,
-    FossilSpecialTags,
-    FossilCommitMessage,
-    FossilPassword,
-    FossilUsername,
+    ZitHash,
+    ZitSpecialTags,
+    ZitCommitMessage,
     ResourceStatus,
-    ResourcePath,
 } from './openedRepository';
+import type { Commit, FileStatus, RelativePath } from './openedRepository';
 import type { Model } from './model';
-import {
-    FossilResource,
-    CommitOptions,
-    CommitScope,
-    Repository,
-} from './repository';
-import { FossilResourceGroup, isResourceGroup } from './resourceGroups';
+import { ZitResource, CommitOptions, Repository } from './repository';
+import { ZitResourceGroup, isResourceGroup } from './resourceGroups';
 import * as interaction from './interaction';
-import { BranchExistsAction, CommitSources } from './interaction';
+import { CommitSources } from './interaction';
 import * as humanise from './humanise';
 import { partition } from './util';
-import { toFossilUri } from './uri';
-import { FossilPreviewManager } from './preview';
+import { fromZitUri, toZitEmptyUri, toZitUri } from './uri';
+import { ZitAnnotator } from './praise';
+import type { DocumentFsPath, ZitExecutable } from './zitExecutable';
 import type {
-    DocumentFsPath as DocumentFsPath,
-    FossilCWD,
-    FossilExecutable,
-    FossilProjectDescription,
-    FossilProjectName,
-} from './fossilExecutable';
+    TimelineCommitItem,
+    ZitTimelineProvider,
+} from './timelineProvider';
 
 import { localize } from './main';
-import type { Credentials } from './gitExport';
+import { exportGit } from './gitExport';
 
 type CommandKey =
     | 'add'
     | 'addAll'
     | 'branch'
     | 'branchChange'
+    | 'compare'
     | 'cherrypick'
     | 'clean'
+    | 'clearRemote'
     | 'clone'
-    | 'close'
     | 'closeBranch'
     | 'commit'
     | 'commitAll'
     | 'commitBranch'
-    | 'commitStaged'
     | 'commitWithInput'
-    | 'deleteFile'
-    | 'deleteFiles'
     | 'fileLog'
     | 'forget'
     | 'gitExport'
-    | 'gitPublish'
     | 'ignore'
     | 'init'
-    | 'integrate'
     | 'log'
     | 'merge'
     | 'open'
@@ -92,37 +79,41 @@ type CommandKey =
     | 'openFileFromUri'
     | 'openFiles'
     | 'openResource'
-    | 'openUI'
-    | 'patchApply'
-    | 'patchCreate'
     | 'praise'
     | 'pull'
     | 'push'
     | 'pushTo'
     | 'redo'
     | 'refresh'
-    | 'relocate'
-    | 'render'
-    | 'renderSave'
-    | 'reopenBranch'
+    | 'rename'
     | 'revert'
+    | 'setRemote'
     | 'revertAll'
     | 'revertChange'
     | 'showOutput'
-    | 'stage'
-    | 'stageAll'
+    | 'showRemote'
     | 'stashApply'
     | 'stashDrop'
     | 'stashPop'
     | 'stashSave'
-    | 'stashSnapshot'
+    | 'tagAdd'
+    | 'tagCancel'
+    | 'tagShow'
+    | 'tagShowForCheckin'
+    | 'stashShow'
     | 'sync'
     | 'undo'
-    | 'unstage'
-    | 'unstageAll'
+    | 'timelineFile'
+    | 'timelineLoadMore'
+    | 'timelineOpen'
+    | 'timelineProject'
+    | 'timelineRefresh'
+    | 'timelineCompare'
     | 'update'
-    | 'wikiCreate';
-export type CommandId = `fossil.${CommandKey}`;
+    | 'worktreeCreate'
+    | 'worktreeOpen'
+    | 'worktreeOpenNewWindow';
+export type CommandId = `zit.${CommandKey}`;
 
 interface Command {
     id: CommandId;
@@ -158,7 +149,7 @@ const enum Inline {
 //             fn = makeCommandWithRepository(fn);
 //         }
 //         register.push({
-//             id: `fossil.${context.name as CommandKey}`,
+//             id: `zit.${context.name as CommandKey}`,
 //             method: fn,
 //         });
 //         return fn;
@@ -176,7 +167,7 @@ function command(repository?: 1) {
             fn = makeCommandWithRepository(fn);
         }
         register.push({
-            id: `fossil.${key}`,
+            id: `zit.${key}`,
             method: fn,
         });
     };
@@ -184,22 +175,17 @@ function command(repository?: 1) {
 
 export class CommandCenter {
     private readonly disposables: Disposable[];
-    private readonly previewManager: FossilPreviewManager;
-    private credentials: Credentials | undefined;
 
     constructor(
-        private readonly executable: FossilExecutable,
+        private readonly executable: ZitExecutable,
         private readonly model: Model,
         private readonly outputChannel: LogOutputChannel,
-        context: ExtensionContext
+        private readonly timeline: ZitTimelineProvider
     ) {
-        this.previewManager = new FossilPreviewManager(context, executable);
-
         this.disposables = register.map(command =>
             commands.registerCommand(command.id, command.method, this)
         );
         register.length = 0;
-        this.disposables.push(this.previewManager);
     }
 
     @command(Inline.Repository)
@@ -208,47 +194,38 @@ export class CommandCenter {
     }
 
     @command()
-    async openResource(resource: FossilResource): Promise<void> {
-        await this._openResource(resource, undefined, true, false);
+    async openResource(resource: ZitResource): Promise<void> {
+        await this._openResource(resource, undefined, true);
     }
 
     private async _openResource(
-        resource: FossilResource | undefined,
+        resource: ZitResource | undefined,
         preview?: boolean,
-        preserveFocus?: boolean,
-        preserveSelection?: boolean
+        preserveFocus?: boolean
     ): Promise<void> {
         if (!resource) {
             return;
         }
         const left = this.getLeftResource(resource);
-        const right = this.getRightResource(resource);
+        let right = this.getRightResource(resource);
         const title = this.getTitle(resource);
-
         const opts: TextDocumentShowOptions = {
             preserveFocus,
             preview,
             viewColumn: ViewColumn.Active,
         };
 
-        const activeTextEditor = window.activeTextEditor;
-
-        // Check if active text editor has same path as other editor. we cannot compare via
-        // URI.toString() here because the schemas can be different. Instead we just go by path.
-        if (
-            preserveSelection &&
-            activeTextEditor &&
-            activeTextEditor.document.uri.path === right.path
-        ) {
-            opts.selection = activeTextEditor.selection;
-        }
-
         if (!left) {
-            const document = await workspace.openTextDocument(right);
+            const document = await workspace.openTextDocument(
+                resource.resourceUri
+            );
             await window.showTextDocument(document, opts);
             return;
         }
-        return commands.executeCommand<void>(
+        if (!right) {
+            right = toZitEmptyUri(resource.original);
+        }
+        await commands.executeCommand<void>(
             'vscode.diff',
             left,
             right,
@@ -257,232 +234,221 @@ export class CommandCenter {
         );
     }
 
-    private getLeftResource(resource: FossilResource): Uri | undefined {
+    private getLeftResource(resource: ZitResource): Uri | undefined {
         switch (resource.status) {
-            case ResourceStatus.RENAMED:
-                if (resource.renameResourceUri) {
-                    return toFossilUri(resource.original);
-                }
-                /* c8 ignore next */
-                return;
-
             case ResourceStatus.ADDED:
             case ResourceStatus.EXTRA:
                 return;
-
             case ResourceStatus.MODIFIED:
-            case ResourceStatus.CONFLICT:
             case ResourceStatus.DELETED:
             case ResourceStatus.MISSING:
             default:
-                return toFossilUri(resource.original);
+                return toZitUri(resource.original);
         }
     }
 
-    private getRightResource(resource: FossilResource): Uri {
+    private getRightResource(resource: ZitResource): Uri | undefined {
         switch (resource.status) {
             case ResourceStatus.DELETED:
             case ResourceStatus.MISSING:
-                return toFossilUri(resource.resourceUri);
+                return;
             case ResourceStatus.ADDED:
             case ResourceStatus.MODIFIED:
-            case ResourceStatus.RENAMED:
             case ResourceStatus.EXTRA:
-            case ResourceStatus.CONFLICT:
             default:
                 return resource.resourceUri;
         }
     }
 
-    private getTitle(resource: FossilResource): string {
+    private getMultiDiffResource(resource: ZitResource): [Uri, Uri, Uri] {
+        return [
+            resource.resourceUri,
+            this.getLeftResource(resource) ?? toZitEmptyUri(resource.original),
+            this.getRightResource(resource) ?? toZitEmptyUri(resource.original),
+        ];
+    }
+
+    private getComparisonResource(
+        repository: Repository,
+        file: FileStatus,
+        from: ZitCheckin,
+        to: ZitCheckin
+    ): [Uri, Uri, Uri] {
+        const uri = Uri.file(path.join(repository.root, file.path));
+        const left =
+            file.status === ResourceStatus.ADDED
+                ? toZitEmptyUri(uri)
+                : toZitUri(uri, from);
+        const right =
+            file.status === ResourceStatus.DELETED
+                ? toZitEmptyUri(uri)
+                : toZitUri(uri, to);
+        return [uri, left, right];
+    }
+
+    private async openComparison(
+        repository: Repository,
+        from: ZitCheckin,
+        to: ZitCheckin
+    ): Promise<void> {
+        const files = await repository.diff(from, to);
+        await commands.executeCommand(
+            'vscode.changes',
+            localize('compare refs title', 'Zit Changes: {0} ↔ {1}', from, to),
+            files.map(file =>
+                this.getComparisonResource(repository, file, from, to)
+            )
+        );
+    }
+
+    private getTitle(resource: ZitResource): string {
         const basename = path.basename(resource.resourceUri.fsPath);
-
         switch (resource.status) {
-            case ResourceStatus.MODIFIED:
-            case ResourceStatus.ADDED:
-            case ResourceStatus.CONFLICT:
-                return `${basename} (Working Directory)`;
-
-            case ResourceStatus.RENAMED:
-                return `${basename} (Renamed)`;
-
             case ResourceStatus.DELETED:
                 return `${basename} (Deleted)`;
-
             case ResourceStatus.MISSING:
                 return `${basename} (Missing)`;
+            case ResourceStatus.ADDED:
+            case ResourceStatus.MODIFIED:
+            case ResourceStatus.EXTRA:
+            default:
+                return `${basename} (Working Directory)`;
         }
-        /* c8 ignore next */
-        return '';
     }
 
     @command()
     async clone(): Promise<void> {
-        let url = await interaction.inputRepoUrl();
+        const url = await interaction.inputRepoUrl();
         if (!url) {
             return;
         }
-        let password: FossilPassword | undefined;
-        let username: FossilUsername | undefined;
-
-        // uri.authority = [userinfo "@"] host [":" port]
-        let host = url.authority;
-        // match:
-        // - username:pws@host
-        // - username@host
-        const found = url.authority.match(
-            /((?<username>.+?):(?<password>.+)|(?<full>.+))@/
-        );
-        if (found) {
-            // we have username and optionally password
-            password = found.groups!.password as FossilPassword | undefined;
-            username = (
-                password === undefined
-                    ? found.groups!.full
-                    : found.groups!.username
-            ) as FossilUsername;
-            host = host.slice(found[0].length);
-        }
-
-        if (url.scheme.toLowerCase() != 'file') {
-            if (username === undefined) {
-                username = await interaction.inputCloneUser();
-                if (username === undefined) {
-                    return; // user pressed <Esc>
-                }
-            }
-            if (username) {
-                if (password === undefined) {
-                    password = await interaction.inputClonePassword();
-                    // if user pressed <Esc> its okay - he or she just
-                    // don't want to specify a password
-                }
-                const userinfo = password
-                    ? username + ':' + password
-                    : username;
-                const authority = userinfo.replace('@', '%40') + '@' + host;
-                url = url.with({ authority: authority }) as FossilURI;
-            }
-        }
-        const fossilPath = await interaction.selectNewFossilPath('Clone');
-        if (!fossilPath) {
+        const root = await interaction.selectCheckoutDirectory('Clone');
+        if (!root) {
             return;
         }
 
-        const clonePromise = this.executable.clone(url, fossilPath);
-        interaction.statusCloning(clonePromise);
-        const fossilRoot = await clonePromise;
-        await this.askOpenRepository(fossilPath, fossilRoot);
-    }
-
-    /**
-     * Execute "fossil open". When FossilRoot has files allow to
-     * run "fossil open --force"
-     */
-    async openRepository(
-        filePath: FossilPath,
-        parentPath: FossilCWD
-    ): Promise<void> {
-        const result = await this.executable.openClone(filePath, parentPath);
-        if (
-            result.exitCode &&
-            result.fossilErrorCode === 'OperationMustBeForced'
-        ) {
-            const openNotEmpty = await interaction.confirmOpenNotEmpty(
-                parentPath
-            );
-            if (openNotEmpty) {
-                await this.executable.openCloneForce(filePath, parentPath);
-            }
+        const result = await interaction.runCloneWithProgress(signal =>
+            OpenedRepository.clone(this.executable, url, root, signal)
+        );
+        if (result.exitCode === 0) {
+            await this.askOpenRepository(root);
         }
     }
 
-    /**
-     * ask user to run "fossil open" after `clone` or `init`
-     */
-    async askOpenRepository(
-        filePath: FossilPath,
-        fossilCwd: FossilCWD
+    async openRepository(
+        root: ZitRoot,
+        checkin?: ZitCheckin,
+        forceOpen = false
     ): Promise<void> {
-        const openClonedRepo = await interaction.promptOpenClonedRepo();
-        if (openClonedRepo) {
-            await this.openRepository(filePath, fossilCwd);
-            await this.model.tryOpenRepository(fossilCwd);
+        if (
+            !forceOpen &&
+            (await OpenedRepository.isMaterialized(this.executable, root))
+        ) {
+            await this.model.tryOpenRepository(root);
+            return;
+        }
+        const result = await OpenedRepository.open(
+            this.executable,
+            root,
+            checkin
+        );
+        if (result.exitCode === 0) {
+            await this.model.tryOpenRepository(root);
+        }
+    }
+
+    private async askOpenRepository(root: ZitRoot): Promise<void> {
+        if (await interaction.promptOpenClonedRepo()) {
+            await this.openRepository(root, undefined, true);
         }
     }
 
     @command()
     async init(): Promise<void> {
-        const fossilPath = await interaction.selectNewFossilPath('Create');
-
-        if (!fossilPath) {
+        const root = await interaction.selectCheckoutDirectory('Create');
+        if (!root) {
             return;
         }
-        const fossilCwd = path.dirname(fossilPath) as FossilCWD;
-        let projectName: FossilProjectName | undefined;
-        let projectDesc: FossilProjectDescription | undefined;
-        if (this.executable.version >= [2, 18]) {
-            const userProjectName = await interaction.inputProjectName();
-            if (userProjectName === undefined) {
-                return;
-            }
-            projectName = userProjectName;
-
-            const userProjectDesc = await interaction.inputProjectDescription();
-            if (userProjectDesc === undefined) {
-                return;
-            }
-            projectDesc = userProjectDesc;
+        const result = await OpenedRepository.init(this.executable, root);
+        if (result.exitCode === 0) {
+            await this.model.tryOpenRepository(root);
         }
-
-        // run init in the file folder in case any artifacts appear
-        await this.executable.init(
-            fossilCwd,
-            fossilPath,
-            projectName,
-            projectDesc
-        );
-        await this.askOpenRepository(fossilPath, fossilCwd);
     }
 
     @command()
     async open(): Promise<void> {
-        const fossilPath = await interaction.selectExistingFossilPath();
-        if (!fossilPath) {
+        const root = await interaction.selectCheckoutDirectory('Open');
+        if (root) {
+            await this.openRepository(root);
+        }
+    }
+
+    private async openSelectedWorktree(
+        repository: Repository,
+        forceNewWindow: boolean
+    ): Promise<void> {
+        const selected = await interaction.pickWorktree(
+            await repository.getWorktrees()
+        );
+        if (!selected) {
             return;
         }
-        const rootPath = await interaction.selectFossilRootPath();
-        if (!rootPath) {
-            return;
-        }
-        await this.openRepository(fossilPath, rootPath);
-        await this.model.tryOpenRepository(rootPath);
+        await commands.executeCommand(
+            'vscode.openFolder',
+            Uri.file(selected.path),
+            forceNewWindow
+                ? { forceNewWindow: true }
+                : { forceReuseWindow: true }
+        );
     }
 
     @command(Inline.Repository)
-    async close(repository: Repository): Promise<void> {
-        return this.model.close(repository);
+    async worktreeOpen(repository: Repository): Promise<void> {
+        await this.openSelectedWorktree(repository, false);
+    }
+
+    @command(Inline.Repository)
+    async worktreeOpenNewWindow(repository: Repository): Promise<void> {
+        await this.openSelectedWorktree(repository, true);
+    }
+
+    @command(Inline.Repository)
+    async worktreeCreate(repository: Repository): Promise<void> {
+        const destination = await interaction.selectEmptyWorktreeDirectory();
+        if (!destination) {
+            return;
+        }
+
+        const result = await repository.createWorktree(destination);
+        if (result.exitCode) {
+            return;
+        }
+        await commands.executeCommand(
+            'vscode.openFolder',
+            Uri.file(destination),
+            { forceNewWindow: true }
+        );
     }
 
     @command()
     openFiles(
-        ...resources: (FossilResource | SourceControlResourceGroup)[]
+        ...resources: (ZitResource | SourceControlResourceGroup)[]
     ): Promise<void> {
         if (resources.length === 1) {
             // a resource group proxy object?
             const [resourceGroup] = resources;
             if (isResourceGroup(resourceGroup)) {
                 // const groupId = resourceGroup.id
-                resources = resourceGroup.resourceStates as FossilResource[];
+                resources = resourceGroup.resourceStates as ZitResource[];
             }
         }
 
-        return this.openFile(...(<FossilResource[]>resources));
+        return this.openFile(...(<ZitResource[]>resources));
     }
 
     // user clicked `Open file` action in diff view or in the scm panel
     @command()
-    async openFile(...resources: FossilResource[]): Promise<void> {
+    async openFile(...resources: ZitResource[]): Promise<void> {
         const uris = resources.map(res => res.resourceUri);
         const preview = uris.length === 1;
         const activeTextEditor = window.activeTextEditor;
@@ -509,22 +475,25 @@ export class CommandCenter {
     }
 
     @command()
-    async openChange(...resources: FossilResource[]): Promise<void> {
+    async openChange(...resources: ZitResource[]): Promise<void> {
         if (resources.length === 1) {
-            // a resource group proxy object?
             const [resourceGroup] = resources;
             if (isResourceGroup(resourceGroup)) {
-                // const groupId = resourceGroup.id;
-                const resources =
-                    resourceGroup.resourceStates as FossilResource[];
-                return this.openChange(...resources);
+                return this.openChange(
+                    ...(resourceGroup.resourceStates as ZitResource[])
+                );
             }
+            return this._openResource(resourceGroup);
+        }
+        if (resources.length === 0) {
+            return;
         }
 
-        const preview = resources.length === 1 ? undefined : false;
-        for (const resource of resources) {
-            await this._openResource(resource, preview, true, false);
-        }
+        await commands.executeCommand<void>(
+            'vscode.changes',
+            localize('open changes title', 'Zit Changes'),
+            resources.map(resource => this.getMultiDiffResource(resource))
+        );
     }
 
     @command()
@@ -544,31 +513,11 @@ export class CommandCenter {
         return this._openResource(resource);
     }
 
-    @command()
-    async ignore(
-        ...resourceStates: SourceControlResourceState[]
-    ): Promise<void> {
-        this.maybeUseDefaultResource(resourceStates);
-        const scmResources = resourceStates.filter(
-            s => s instanceof FossilResource && s.resourceGroup.is('untracked')
-        );
-
-        if (!scmResources.length) {
-            return;
-        }
-
-        const resources = scmResources.map(r => r.resourceUri);
-        const repository = this.model.getRepository(resources[0]);
-        if (repository) {
-            await repository.ignore(...resources);
-        }
-    }
-
     @command(Inline.Repository)
     async addAll(repository: Repository): Promise<void> {
         const untracked = repository.untrackedGroup.resourceStates;
         if (untracked.length) {
-            return repository.stage(...untracked.map(r => r.resourceUri));
+            return repository.add(...untracked.map(r => r.resourceUri));
         }
     }
 
@@ -577,7 +526,7 @@ export class CommandCenter {
         this.maybeUseDefaultResource(resourceStates);
 
         const scmResources = resourceStates.filter(
-            s => s instanceof FossilResource && s.resourceGroup.is('untracked')
+            s => s instanceof ZitResource && s.resourceGroup.is('untracked')
         );
 
         if (!scmResources.length) {
@@ -587,12 +536,93 @@ export class CommandCenter {
         const resources = scmResources.map(r => r.resourceUri);
         const repository = this.model.getRepository(resources[0]);
         if (repository) {
-            await repository.stage(...resources);
+            await repository.add(...resources);
+        }
+    }
+
+    @command()
+    async ignore(
+        ...resourceArgs: Array<Uri | ZitResource | Array<Uri | ZitResource>>
+    ): Promise<void> {
+        const resources = resourceArgs.flatMap(resource =>
+            Array.isArray(resource) ? resource : [resource]
+        );
+        const resourcesByRepository = new Map<Repository, Uri[]>();
+
+        for (const resource of resources) {
+            const uri =
+                resource instanceof ZitResource
+                    ? resource.resourceUri
+                    : resource;
+            const repository = this.model.getRepository(uri);
+            if (!repository) {
+                continue;
+            }
+
+            const repositoryResources =
+                resourcesByRepository.get(repository) ?? [];
+            repositoryResources.push(uri);
+            resourcesByRepository.set(repository, repositoryResources);
+        }
+
+        for (const [repository, repositoryResources] of resourcesByRepository) {
+            const relativePaths = [
+                ...new Set(
+                    repositoryResources
+                        .map(uri =>
+                            repository
+                                .mapFileUriToRepoRelativePath(uri)
+                                .replace(/\[/g, '\\[')
+                        )
+                        .filter(relativePath => relativePath.length > 0)
+                ),
+            ];
+            if (!relativePaths.length) {
+                continue;
+            }
+
+            const ignoreUri = Uri.file(
+                path.join(repository.root, '.zitignore')
+            );
+            let contents = '';
+            try {
+                contents = Buffer.from(
+                    await workspace.fs.readFile(ignoreUri)
+                ).toString('utf8');
+            } catch (error) {
+                if (
+                    !(error instanceof FileSystemError) ||
+                    error.code !== 'FileNotFound'
+                ) {
+                    throw error;
+                }
+            }
+
+            const eol = contents.includes('\r\n') ? '\r\n' : '\n';
+            const existing = new Set(contents.split(/\r?\n/));
+            const additions = relativePaths.filter(
+                relativePath => !existing.has(relativePath)
+            );
+
+            if (additions.length) {
+                const separator =
+                    contents.length > 0 && !contents.endsWith('\n') ? eol : '';
+                const updated = `${contents}${separator}${additions.join(
+                    eol
+                )}${eol}`;
+                await workspace.fs.writeFile(
+                    ignoreUri,
+                    Buffer.from(updated, 'utf8')
+                );
+            }
+
+            await window.showTextDocument(ignoreUri, { preview: false });
+            await repository.refresh();
         }
     }
     @command()
-    async relocate(resourceState: SourceControlResourceState): Promise<void> {
-        if (!(resourceState instanceof FossilResource)) {
+    async rename(resourceState: SourceControlResourceState): Promise<void> {
+        if (!(resourceState instanceof ZitResource)) {
             return;
         }
         const uri = resourceState.resourceUri;
@@ -609,7 +639,10 @@ export class CommandCenter {
                 )
             );
             if (newPath) {
-                await repository.rename(uri.fsPath as ResourcePath, newPath);
+                const destination = path.isAbsolute(newPath)
+                    ? repository.mapFileUriToRepoRelativePath(Uri.file(newPath))
+                    : newPath;
+                await repository.rename(relativePath, destination);
             }
         }
     }
@@ -620,7 +653,9 @@ export class CommandCenter {
         this.maybeUseDefaultResource(resourceStates);
 
         const scmResources = resourceStates.filter(
-            s => s instanceof FossilResource && s.resourceGroup.is('working')
+            s =>
+                s instanceof ZitResource &&
+                (s.resourceGroup.is('added') || s.resourceGroup.is('working'))
         );
 
         if (!scmResources.length) {
@@ -634,92 +669,6 @@ export class CommandCenter {
         }
     }
 
-    private async deleteResources(
-        repository: Repository,
-        resources: SourceControlResourceState[]
-    ): Promise<void> {
-        const paths = resources
-            .filter(resource => resource.resourceUri.scheme === 'file')
-            .map(resource => resource.resourceUri.fsPath as DocumentFsPath);
-        if (await interaction.confirmDeleteResources(paths)) {
-            await repository.clean(paths);
-        }
-    }
-
-    @command(Inline.Repository)
-    async deleteFile(
-        repository: Repository,
-        ...resourceStates: SourceControlResourceState[]
-    ): Promise<void> {
-        return this.deleteResources(repository, resourceStates);
-    }
-
-    @command(Inline.Repository)
-    async deleteFiles(
-        repository: Repository,
-        ...resourceGroups: FossilResourceGroup[]
-    ): Promise<void> {
-        return this.deleteResources(
-            repository,
-            resourceGroups.map(group => group.resourceStates).flat()
-        );
-    }
-
-    @command() // run by repo
-    async stage(
-        ...resourceStates: SourceControlResourceState[]
-    ): Promise<void> {
-        this.maybeUseDefaultResource(resourceStates);
-
-        const scmResources = resourceStates.filter(
-            s =>
-                s instanceof FossilResource &&
-                (s.resourceGroup.is('working') ||
-                    s.resourceGroup.is('untracked'))
-        );
-
-        if (!scmResources.length) {
-            return;
-        }
-
-        const resources = scmResources.map(r => r.resourceUri);
-        const repository = this.model.getRepository(resources[0]);
-        if (repository) {
-            await repository.stage(...resources);
-        }
-    }
-
-    @command(Inline.Repository)
-    async stageAll(repository: Repository): Promise<void> {
-        await repository.stage();
-    }
-
-    @command()
-    async unstage(
-        ...resourceStates: SourceControlResourceState[]
-    ): Promise<void> {
-        this.maybeUseDefaultResource(resourceStates);
-
-        const scmResources = resourceStates.filter(
-            s => s instanceof FossilResource && s.resourceGroup.is('staging')
-        );
-
-        if (!scmResources.length) {
-            return;
-        }
-
-        const resources = scmResources.map(r => r.resourceUri);
-        const repository = this.model.getRepository(resources[0]);
-        if (repository) {
-            await repository.unstage(...resources);
-        }
-    }
-
-    @command(Inline.Repository)
-    async unstageAll(repository: Repository): Promise<void> {
-        return repository.unstage();
-    }
-
     @command()
     async revert(
         ...resourceStates: SourceControlResourceState[]
@@ -727,8 +676,7 @@ export class CommandCenter {
         this.maybeUseDefaultResource(resourceStates);
 
         const scmResources = resourceStates.filter(
-            (s): s is FossilResource =>
-                s instanceof FossilResource && s.isDirtyStatus
+            (s): s is ZitResource => s instanceof ZitResource && s.isDirtyStatus
         );
 
         if (!scmResources.length) {
@@ -766,13 +714,13 @@ export class CommandCenter {
     @command(Inline.Repository)
     async revertAll(
         repository: Repository,
-        ...groups: FossilResourceGroup[]
+        ...groups: ZitResourceGroup[]
     ): Promise<void> {
         if (!groups.length) {
-            groups = [repository.workingGroup, repository.conflictGroup];
+            groups = [repository.addedGroup, repository.workingGroup];
         }
         const name = groups.map(g => `"${g.label}"`).join(' and ');
-        if (await interaction.confirmDiscardAllChanges(name)) {
+        if (await interaction.confirmDiscardAllChanges(name, groups.length)) {
             await repository.revert(
                 ...groups
                     .map(g => g.resourceStates)
@@ -784,22 +732,39 @@ export class CommandCenter {
 
     @command(Inline.Repository)
     async clean(repository: Repository): Promise<void> {
-        if (await interaction.confirmDeleteExtras()) {
-            await repository.cleanAll();
+        const preview = await repository.clean(true);
+        if (preview.exitCode) {
+            return;
+        }
+        const paths = preview.stdout.split(/\r?\n/).filter(Boolean);
+        if (
+            !paths.length ||
+            !(await interaction.confirmMoveResourcesToTrash(paths))
+        ) {
+            return;
+        }
+        for (const rawPath of paths) {
+            await workspace.fs.delete(
+                repository.toUri(rawPath as RelativePath),
+                {
+                    recursive: true,
+                    useTrash: true,
+                }
+            );
         }
     }
 
     private async checkTrackedUnsavedFiles(
         repository: Repository
-    ): Promise<boolean> {
+    ): Promise<{ proceed: boolean; saved: boolean }> {
         const allUnsavedDocuments = workspace.textDocuments.filter(
             doc => !doc.isUntitled && doc.isDirty
         );
         const existingUris = new Set<string>();
         if (allUnsavedDocuments.length) {
-            (
-                await repository.ls(...allUnsavedDocuments.map(doc => doc.uri))
-            ).map(uri => existingUris.add(uri.fsPath));
+            for (const uri of await repository.ls()) {
+                existingUris.add(uri.fsPath);
+            }
         }
         const documents = allUnsavedDocuments.filter(
             doc =>
@@ -823,7 +788,7 @@ export class CommandCenter {
                 'save and commit',
                 'Save All & Commit'
             );
-            const commit = localize('commit', 'C&&ommit Staged Changes');
+            const commit = localize('commit', 'C&&ommit Without Saving');
             const pick = await window.showWarningMessage(
                 message,
                 { modal: true },
@@ -832,131 +797,60 @@ export class CommandCenter {
             );
 
             if (pick === saveAndCommit) {
-                await Promise.all(documents.map(d => d.save()));
-                await repository.add(...documents.map(d => d.uri));
-            } else if (pick !== commit) {
-                return false; // do not commit on cancel
+                const saved = await Promise.all(documents.map(d => d.save()));
+                const succeeded = saved.every(Boolean);
+                return { proceed: succeeded, saved: succeeded };
+            }
+            if (pick !== commit) {
+                return { proceed: false, saved: false };
             }
         }
-        return true;
+        return { proceed: true, saved: false };
     }
-    private async confirmCommitScope(
-        repository: Repository,
-        scope: CommitScope
-    ): Promise<Exclude<CommitScope, CommitScope.UNKNOWN> | undefined> {
-        const numWorkingResources =
-            repository.workingGroup.resourceStates.length;
-        const numStagingResources =
-            repository.stagingGroup.resourceStates.length;
-        if (scope === CommitScope.UNKNOWN) {
-            if (numWorkingResources > 0 && numStagingResources == 0) {
-                const useWorkingGroup =
-                    await interaction.confirmCommitWorkingGroup();
-                if (!useWorkingGroup) {
-                    return;
-                }
-                scope = CommitScope.WORKING_GROUP;
-            } else {
-                scope = CommitScope.STAGING_GROUP;
-            }
-        }
-
-        if (
-            scope === CommitScope.WORKING_GROUP ||
-            scope === CommitScope.STAGING_GROUP
-        ) {
-            const missingResources = (
-                scope === CommitScope.WORKING_GROUP
-                    ? repository.workingGroup
-                    : repository.stagingGroup
-            ).resourceStates.filter(r => r.status === ResourceStatus.MISSING);
-            if (missingResources.length) {
-                const missingFilenames = missingResources.map(r =>
-                    repository.mapResourceToWorkspaceRelativePath(r)
-                );
-                const deleteConfirmed =
-                    await interaction.confirmDeleteMissingFilesForCommit(
-                        missingFilenames
-                    );
-                if (!deleteConfirmed) {
-                    return;
-                }
-                await this.forget(...missingResources);
-            }
-        }
-
-        if (
-            !repository.fossilStatus?.isMerge &&
-            ((numWorkingResources === 0 && numStagingResources === 0) || // no changes
-                (scope === CommitScope.STAGING_GROUP &&
-                    numStagingResources === 0) || // no staged changes
-                (scope === CommitScope.WORKING_GROUP &&
-                    numWorkingResources === 0)) // no working directory changes
-        ) {
-            interaction.informNoChangesToCommit();
-            return;
-        }
-        return scope;
-    }
-    private async validateNoConflicts(
-        repository: Repository,
-        scope: CommitScope
-    ): Promise<Exclude<CommitScope, CommitScope.UNKNOWN> | undefined> {
-        const numConflictResources =
-            repository.conflictGroup.resourceStates.length;
-        if (numConflictResources > 0) {
-            await interaction.warnResolveConflicts();
-            return;
-        }
-        if (repository.fossilStatus?.isMerge) {
-            return CommitScope.ALL;
-        } else {
-            return this.confirmCommitScope(repository, scope);
-        }
-    }
-
     private async smartCommit(
         repository: Repository,
-        getCommitMessage: () => Promise<FossilCommitMessage | undefined>,
-        opts: CommitOptions = { scope: CommitScope.UNKNOWN }
+        getCommitMessage: () => Promise<ZitCommitMessage | undefined>,
+        opts: CommitOptions = {}
     ): Promise<boolean> {
-        if (!(await this.checkTrackedUnsavedFiles(repository))) {
+        const unsavedFiles = await this.checkTrackedUnsavedFiles(repository);
+        if (!unsavedFiles.proceed) {
             return false;
         }
-        const scope = await this.validateNoConflicts(repository, opts.scope);
-        if (scope === undefined) {
+        if (
+            !repository.zitStatus?.isMerge &&
+            repository.addedGroup.resourceStates.length === 0 &&
+            repository.workingGroup.resourceStates.length === 0 &&
+            !unsavedFiles.saved
+        ) {
+            interaction.informNoChangesToCommit();
             return false;
         }
-        const newBranch =
-            (opts.useBranch || undefined) &&
-            (await interaction.inputNewBranchOptions());
+        const newBranch = opts.useBranch
+            ? await interaction.inputNewBranchOptions()
+            : undefined;
+        if (opts.useBranch && !newBranch) {
+            return false;
+        }
 
         const message = await getCommitMessage();
-
         if (message === undefined) {
             return false;
         }
 
-        const result = await repository.commit(message, scope, newBranch);
-
-        if (!result.exitCode) {
-            const config = await repository.config('last-git-export-repo');
-            if (config.get('last-git-export-repo')) {
-                if (await interaction.confirmGitExport()) {
-                    repository.gitExport();
-                }
-            }
-        }
+        const result = await repository.commit(
+            message,
+            newBranch,
+            opts.closeBranch
+        );
         return !result.exitCode;
     }
 
-    // ToDo: rename/rethink this function
     private async commitWithAnyInput(
         repository: Repository,
         opts: CommitOptions
     ): Promise<void> {
         const inputBox = repository.sourceControl.inputBox;
-        const message = inputBox.value as FossilCommitMessage;
+        const message = inputBox.value as ZitCommitMessage;
         const didCommit = await this.smartCommit(
             repository,
             () =>
@@ -972,9 +866,7 @@ export class CommandCenter {
 
     @command(Inline.Repository)
     async commit(repository: Repository): Promise<void> {
-        await this.commitWithAnyInput(repository, {
-            scope: CommitScope.UNKNOWN,
-        });
+        await this.commitWithAnyInput(repository, {});
     }
 
     @command(Inline.Repository)
@@ -982,7 +874,7 @@ export class CommandCenter {
         const didCommit = await this.smartCommit(
             repository,
             async () =>
-                repository.sourceControl.inputBox.value as FossilCommitMessage
+                repository.sourceControl.inputBox.value as ZitCommitMessage
         );
 
         if (didCommit) {
@@ -991,35 +883,25 @@ export class CommandCenter {
     }
 
     @command(Inline.Repository)
-    async commitStaged(repository: Repository): Promise<void> {
-        await this.commitWithAnyInput(repository, {
-            scope: CommitScope.STAGING_GROUP,
-        });
-    }
-
-    @command(Inline.Repository)
     async commitAll(repository: Repository): Promise<void> {
-        await this.commitWithAnyInput(repository, { scope: CommitScope.ALL });
+        await this.commitWithAnyInput(repository, {});
     }
 
     @command(Inline.Repository)
     async commitBranch(repository: Repository): Promise<void> {
-        await this.commitWithAnyInput(repository, {
-            scope: CommitScope.UNKNOWN,
-            useBranch: true,
-        });
+        await this.commitWithAnyInput(repository, { useBranch: true });
     }
 
     private async undoOrRedo(
         repository: Repository,
         command: 'undo' | 'redo'
     ): Promise<void> {
-        const undo = await repository.undoOrRedo(command, true); // dry-run
-        if (undo == 'NoUndo') {
-            return interaction.warnNoUndoOrRedo(command);
+        if (!(await interaction.confirmUndoOrRedo(command))) {
+            return;
         }
-        if (await interaction.confirmUndoOrRedo(command, undo)) {
-            await repository.undoOrRedo(command, false); // real-thing
+        const result = await repository.undoOrRedo(command);
+        if (result === 'NoUndo') {
+            await interaction.warnNoUndoOrRedo(command);
         }
     }
 
@@ -1033,26 +915,7 @@ export class CommandCenter {
         return this.undoOrRedo(repository, 'redo');
     }
 
-    @command(Inline.Repository)
-    async patchCreate(repository: Repository): Promise<void> {
-        const newPatchPath = await interaction.inputPatchCreate();
-        if (newPatchPath) {
-            await repository.patchCreate(newPatchPath);
-        }
-    }
-
-    @command(Inline.Repository)
-    async patchApply(repository: Repository): Promise<void> {
-        const newPatchPath = await interaction.inputPatchApply();
-        if (newPatchPath) {
-            await repository.patchApply(newPatchPath);
-        }
-    }
-
-    private async stash(
-        repository: Repository,
-        operation: 'save' | 'snapshot'
-    ): Promise<void> {
+    private async stash(repository: Repository): Promise<void> {
         const now = new Date();
         const dateTime = new Date(
             now.getTime() - now.getTimezoneOffset() * 60000
@@ -1060,34 +923,33 @@ export class CommandCenter {
             .toISOString()
             .slice(0, 19)
             .replace('T', ' ');
-        const defaultMessage =
-            `vscode-${operation} ${dateTime}` as FossilCommitMessage;
-        const stashCommitMessage = await interaction.inputCommitMessage(
-            defaultMessage
-        );
-        if (stashCommitMessage !== undefined) {
-            if (!(await this.checkTrackedUnsavedFiles(repository))) {
-                return;
-            }
-            const scope = await this.validateNoConflicts(
-                repository,
-                CommitScope.UNKNOWN
-            );
-            if (scope === undefined) {
-                return;
-            }
-            await repository.stash(stashCommitMessage, scope, operation);
+        const defaultMessage = `vscode-stash ${dateTime}` as ZitCommitMessage;
+        const message = await interaction.inputCommitMessage(defaultMessage);
+        if (message === undefined) {
+            return;
         }
-    }
-
-    @command(Inline.Repository)
-    async stashSnapshot(repository: Repository): Promise<void> {
-        return this.stash(repository, 'snapshot');
+        const unsavedFiles = await this.checkTrackedUnsavedFiles(repository);
+        if (!unsavedFiles.proceed) {
+            return;
+        }
+        await repository.stash(message);
     }
 
     @command(Inline.Repository)
     async stashSave(repository: Repository): Promise<void> {
-        return this.stash(repository, 'save');
+        return this.stash(repository);
+    }
+
+    @command(Inline.Repository)
+    async stashShow(repository: Repository): Promise<void> {
+        const items = await repository.stashList();
+        const stashId = await interaction.pickStashItem(items, 'show');
+        if (stashId === undefined) {
+            return;
+        }
+        const details = await repository.stashShow(stashId);
+        this.outputChannel.appendLine(details.trimEnd());
+        this.outputChannel.show();
     }
 
     private async stashApplyOrDrop(
@@ -1096,14 +958,18 @@ export class CommandCenter {
     ) {
         const items = await repository.stashList();
         const stashId = await interaction.pickStashItem(items, operation);
-        if (stashId) {
+        if (stashId !== undefined) {
             return repository.stashApplyOrDrop(operation, stashId);
         }
     }
 
     @command(Inline.Repository)
     async stashPop(repository: Repository): Promise<void> {
-        return repository.stashPop();
+        const items = await repository.stashList();
+        const stashId = await interaction.pickStashItem(items, 'pop');
+        if (stashId !== undefined) {
+            return repository.stashPop(stashId);
+        }
     }
 
     @command(Inline.Repository)
@@ -1124,7 +990,7 @@ export class CommandCenter {
         }
         const refs = await repository.getBranchesAndTags();
 
-        const checkin = await interaction.pickUpdateCheckin(refs);
+        const checkin = await interaction.pickCheckin(refs);
         if (checkin) {
             await repository.update(checkin);
         }
@@ -1132,42 +998,102 @@ export class CommandCenter {
 
     @command(Inline.Repository)
     async branch(repository: Repository): Promise<void> {
-        const newBranch = await interaction.inputNewBranchOptions();
-        if (!newBranch) {
-            return;
-        }
-        const result = await repository.newBranch(newBranch);
-        if (
-            result.exitCode &&
-            result.fossilErrorCode === 'BranchAlreadyExists'
-        ) {
-            const action = await interaction.warnBranchAlreadyExists(
-                newBranch.branch
-            );
-            if (action === BranchExistsAction.Reopen) {
-                await repository.newBranch(newBranch);
-            } else if (action === BranchExistsAction.UpdateTo) {
-                await repository.update(newBranch.branch);
-            }
-        }
+        await this.commitWithAnyInput(repository, { useBranch: true });
     }
 
     @command(Inline.Repository)
     async update(repository: Repository): Promise<void> {
-        await repository.update();
+        const checkin = await interaction.pickCheckin(
+            await repository.getBranchesAndTags()
+        );
+        if (checkin) {
+            await repository.update(checkin);
+        }
+    }
+
+    @command(Inline.Repository)
+    async showRemote(repository: Repository): Promise<void> {
+        const remote = await repository.getRemote();
+        if (!remote) {
+            await window.showInformationMessage(
+                localize(
+                    'no default remote configured',
+                    'No default remote is configured.'
+                )
+            );
+            return;
+        }
+        await window.showInformationMessage(
+            localize(
+                'show default remote',
+                'Default remote: {0}',
+                remote.toString()
+            )
+        );
+    }
+
+    @command(Inline.Repository)
+    async setRemote(repository: Repository): Promise<void> {
+        const current = await repository.getRemote();
+        const remote = await interaction.inputRemoteUrl(current);
+        if (!remote) {
+            return;
+        }
+        if (current && remote.toString() !== current.toString()) {
+            const replace = localize(
+                'replace remote action',
+                '&&Replace Remote'
+            );
+            const choice = await window.showWarningMessage(
+                localize(
+                    'confirm replace default remote',
+                    'Replace the default remote {0} with {1}?',
+                    current.toString(),
+                    remote.toString()
+                ),
+                { modal: true },
+                replace
+            );
+            if (choice !== replace) {
+                return;
+            }
+        }
+        await repository.setRemote(remote);
+    }
+
+    @command(Inline.Repository)
+    async clearRemote(repository: Repository): Promise<void> {
+        const remote = await repository.getRemote();
+        if (!remote) {
+            await window.showInformationMessage(
+                localize(
+                    'no default remote configured',
+                    'No default remote is configured.'
+                )
+            );
+            return;
+        }
+        const clear = localize('clear remote action', '&&Clear Remote');
+        const choice = await window.showWarningMessage(
+            localize(
+                'confirm clear default remote',
+                'Clear the default remote {0}?',
+                remote.toString()
+            ),
+            { modal: true },
+            clear
+        );
+        if (choice === clear) {
+            await repository.setRemote(undefined);
+        }
     }
 
     @command(Inline.Repository)
     async pull(repository: Repository): Promise<void> {
-        const remotes = await repository.getRemotes();
-
-        if (!remotes.length) {
+        if (!(await repository.getRemote())) {
             return interaction.warnNoRemotes();
         }
-        const name = await interaction.pickRemote(remotes, 'pull from');
-        if (name) {
-            await repository.pull(name);
-        }
+        await repository.pull();
     }
 
     private async mergeCommon(
@@ -1199,15 +1125,6 @@ export class CommandCenter {
     }
 
     @command(Inline.Repository)
-    async integrate(repository: Repository): Promise<void> {
-        const placeholder = localize(
-            'choose branch integrate',
-            'Choose branch to integrate into working directory:'
-        );
-        return this.mergeCommon(repository, MergeAction.Integrate, placeholder);
-    }
-
-    @command(Inline.Repository)
     async cherrypick(repository: Repository): Promise<void> {
         const logEntries = await repository.getLogEntries();
         const checkin = await interaction.pickCommitToCherrypick(logEntries);
@@ -1219,7 +1136,7 @@ export class CommandCenter {
 
     private async doMerge(
         repository: Repository,
-        otherRevision: FossilCheckin,
+        otherRevision: ZitCheckin,
         mergeAction: MergeAction
     ) {
         const result = await repository.merge(otherRevision, mergeAction);
@@ -1247,49 +1164,163 @@ export class CommandCenter {
 
     @command(Inline.Repository)
     async closeBranch(repository: Repository): Promise<void> {
-        const openedBranches = await repository.getBranches();
-        const placeholder = localize('branchtoclose', 'Branch to close');
-        const branch = await interaction.pickBranch(
-            openedBranches,
-            placeholder
+        await this.commitWithAnyInput(repository, { closeBranch: true });
+    }
+
+    @command(Inline.Repository)
+    async tagShow(repository: Repository): Promise<void> {
+        await this.showTags(repository);
+    }
+
+    @command(Inline.Repository)
+    async tagShowForCheckin(repository: Repository): Promise<void> {
+        const checkin = await this.pickTagCheckin(
+            repository,
+            localize(
+                'select check-in to show tags',
+                'Select a branch, tag, or check-in to show its tags:'
+            )
         );
-        if (branch) {
-            return repository.addTag(branch, 'closed');
+        if (checkin) {
+            await this.showTags(repository, checkin);
         }
     }
 
     @command(Inline.Repository)
-    async reopenBranch(repository: Repository): Promise<void> {
-        const openedBranches = await repository.getBranches({ closed: true });
-        const placeholder = localize('branchtoreopen', 'Branch to reopen');
-        const branch = await interaction.pickBranch(
-            openedBranches,
-            placeholder
-        );
-        if (branch) {
-            return repository.cancelTag(branch, 'closed');
+    async tagAdd(repository: Repository, checkin?: ZitCheckin): Promise<void> {
+        const target = checkin ?? repository.zitStatus?.checkin;
+        if (!target) {
+            return;
         }
+        const tag = await interaction.inputTagName();
+        if (tag) {
+            await repository.addTag(target, tag);
+            this.timeline.refresh();
+        }
+    }
+
+    @command(Inline.Repository)
+    async tagCancel(
+        repository: Repository,
+        checkin?: ZitCheckin
+    ): Promise<void> {
+        const target =
+            checkin ??
+            (await this.pickTagCheckin(
+                repository,
+                localize(
+                    'select check-in to cancel tag',
+                    'Select a branch, tag, or check-in to cancel a tag from:'
+                )
+            ));
+        if (!target) {
+            return;
+        }
+        const tags = await repository.getTags(target);
+        if (!tags.length) {
+            await window.showInformationMessage(
+                localize(
+                    'no tags on check-in',
+                    'No symbolic tags are attached to {0}.',
+                    target
+                )
+            );
+            return;
+        }
+        const tag = await interaction.pickTag(
+            tags,
+            localize(
+                'select tag to cancel',
+                'Select a tag to cancel from {0}:',
+                target
+            )
+        );
+        if (!tag) {
+            return;
+        }
+        const action = localize('cancel tag action', 'Cancel Tag');
+        const confirmed = await window.showWarningMessage(
+            localize(
+                'confirm cancel tag',
+                "Cancel tag '{0}' from {1}?",
+                tag,
+                target
+            ),
+            { modal: true },
+            action
+        );
+        if (confirmed !== action) {
+            return;
+        }
+        await repository.cancelTag(target, tag);
+        this.timeline.refresh();
+    }
+
+    private async pickTagCheckin(
+        repository: Repository,
+        placeHolder: string
+    ): Promise<ZitCheckin | undefined> {
+        return interaction.pickCheckin(await repository.getBranchesAndTags(), {
+            placeHolder,
+            inputLabel: '$(pencil) Enter a check-in',
+            inputPrompt: 'Enter a hash, branch, or tag',
+        });
+    }
+
+    private async showTags(
+        repository: Repository,
+        checkin?: ZitCheckin
+    ): Promise<void> {
+        const tags = await repository.getTags(checkin);
+        if (!tags.length) {
+            await window.showInformationMessage(
+                checkin
+                    ? localize(
+                          'no tags on check-in',
+                          'No symbolic tags are attached to {0}.',
+                          checkin
+                      )
+                    : localize(
+                          'no repository tags',
+                          'No symbolic tags are defined.'
+                      )
+            );
+            return;
+        }
+        await interaction.pickTag(
+            tags,
+            checkin
+                ? localize(
+                      'tags on check-in',
+                      'Symbolic tags attached to {0}:',
+                      checkin
+                  )
+                : localize('repository tags', 'Repository symbolic tags:')
+        );
     }
 
     @command(Inline.Repository)
     async push(repository: Repository): Promise<void> {
-        const remotes = await repository.getRemotes();
-        if (!remotes.length) {
+        if (!(await repository.getRemote())) {
             return interaction.warnNoRemotes();
         }
-        // we know we have remotes now, so push will use the latest
-        await repository.push();
+        const credentials = await interaction.inputSyncCredentials();
+        if (credentials !== undefined) {
+            await repository.push(undefined, credentials ?? undefined);
+        }
     }
 
     @command(Inline.Repository)
     async pushTo(repository: Repository): Promise<void> {
-        const remotes = await repository.getRemotes();
-        if (!remotes.length) {
-            return interaction.warnNoRemotes();
+        const url = await interaction.inputRemoteUrl(
+            await repository.getRemote()
+        );
+        if (!url) {
+            return;
         }
-        const name = await interaction.pickRemote(remotes, 'push to');
-        if (name) {
-            await repository.push(name);
+        const credentials = await interaction.inputSyncCredentials();
+        if (credentials !== undefined) {
+            await repository.push(url, credentials ?? undefined);
         }
     }
 
@@ -1299,21 +1330,32 @@ export class CommandCenter {
     }
 
     @command(Inline.Repository)
-    async openUI(repository: Repository): Promise<void> {
-        const terminal = window.createTerminal({
-            name: 'Fossil UI',
-            cwd: repository.root,
-        });
-        terminal.sendText('fossil ui');
-        //  await commands.executeCommand<void>(
-        //     'simpleBrowser.show',
-        //     'http://127.0.0.1:8000'
-        //     );
+    async log(repository: Repository): Promise<void> {
+        await interaction.presentLogSourcesMenu(repository);
     }
 
     @command(Inline.Repository)
-    async log(repository: Repository): Promise<void> {
-        await interaction.presentLogSourcesMenu(repository);
+    async compare(repository: Repository): Promise<void> {
+        const refs = await repository.getBranchesAndTags();
+        const from = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'compare from',
+                'Select a check-in to compare from'
+            ),
+        });
+        if (!from) {
+            return;
+        }
+        const to = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'compare to',
+                'Select a check-in to compare to'
+            ),
+        });
+        if (!to) {
+            return;
+        }
+        await this.openComparison(repository, from, to);
     }
 
     @command()
@@ -1330,10 +1372,10 @@ export class CommandCenter {
             return;
         }
 
-        const onCommitPicked = (checkin: FossilCheckin) => async () => {
+        const onCommitPicked = (checkin: ZitCheckin) => async () => {
             await interaction.pickDiffAction(
                 logEntries,
-                (to: FossilHash | FossilSpecialTags | undefined) =>
+                (to: ZitHash | ZitSpecialTags | undefined) =>
                     (): Promise<void> =>
                         this.diff(repository, checkin, to, uri!),
                 this.fileLog
@@ -1350,6 +1392,66 @@ export class CommandCenter {
         if (choice) {
             await choice.run();
         }
+    }
+
+    @command()
+    async timelineFile(uri?: Uri): Promise<void> {
+        uri ??= window.activeTextEditor?.document.uri;
+        if (!uri) {
+            return;
+        }
+        this.timeline.showFile(uri);
+        await commands.executeCommand('zit.timeline.focus');
+    }
+
+    @command()
+    async timelineProject(): Promise<void> {
+        this.timeline.showProject();
+        await commands.executeCommand('zit.timeline.focus');
+    }
+
+    @command()
+    timelineRefresh(): void {
+        this.timeline.refresh();
+    }
+
+    @command()
+    async timelineLoadMore(repository: Repository): Promise<void> {
+        this.timeline.loadMore(repository);
+    }
+
+    @command()
+    async timelineCompare(item: TimelineCommitItem): Promise<void> {
+        const refs = await item.repository.getBranchesAndTags();
+        const to = await interaction.pickCheckin(refs, {
+            placeHolder: localize(
+                'timeline compare to',
+                'Select a check-in to compare with {0}',
+                item.commit.hash
+            ),
+        });
+        if (to) {
+            await this.openComparison(item.repository, item.commit.hash, to);
+        }
+    }
+
+    @command()
+    async timelineOpen(
+        repository: Repository,
+        commit: Commit,
+        fileUri?: Uri
+    ): Promise<void> {
+        if (!fileUri) {
+            await interaction.presentCommit(repository, commit.hash);
+            return;
+        }
+
+        const filePath = repository.mapFileUriToRepoRelativePath(fileUri);
+        const details = await repository.getCommitDetails(commit.hash);
+        const status = details.files.find(
+            file => file.path === filePath
+        )?.status;
+        await repository.diffToParent(filePath, commit.hash, status);
     }
 
     @command()
@@ -1371,53 +1473,21 @@ export class CommandCenter {
             ...changes.slice(0, index),
             ...changes.slice(index + 1),
         ]);
-        const firstStagedLine = changes[index].modifiedStartLineNumber - 1;
+        const selectionLine = changes[index].modifiedStartLineNumber - 1;
         textEditor.selections = [
-            new Selection(firstStagedLine, 0, firstStagedLine, 0),
+            new Selection(selectionLine, 0, selectionLine, 0),
         ];
-    }
-
-    @command()
-    async render(uri?: Uri, _info?: { groupId: number }): Promise<void> {
-        uri ??= window.activeTextEditor?.document.uri;
-        if (uri) {
-            return this.previewManager.openDynamicPreview(uri);
-        }
-    }
-
-    @command()
-    async wikiCreate(): Promise<void> {
-        const preview = this.previewManager.activePreview;
-        if (preview) {
-            const where = await interaction.inputWikiType();
-            if (where) {
-                const comment = await interaction.inputWikiComment(where);
-                if (comment) {
-                    const successfully_created = await preview.wikiCreate(
-                        where,
-                        comment
-                    );
-                    if (successfully_created) {
-                        await window.showInformationMessage(
-                            `${where} was successfully created`
-                        );
-                    } else {
-                        await window.showErrorMessage(
-                            `${where} creation failed`
-                        );
-                    }
-                }
-            }
-        } else {
-            this.outputChannel.error(
-                "couldn't create wiki entity - no active preview"
-            );
-        }
     }
 
     @command(Inline.Repository)
     async sync(repository: Repository): Promise<void> {
-        await repository.sync();
+        if (!(await repository.getRemote())) {
+            return interaction.warnNoRemotes();
+        }
+        const credentials = await interaction.inputSyncCredentials();
+        if (credentials !== undefined) {
+            await repository.sync(credentials ?? undefined);
+        }
     }
 
     @command()
@@ -1426,8 +1496,7 @@ export class CommandCenter {
         if (!editor) {
             return;
         }
-        const praise = await require('./praise');
-        if (praise.PraiseAnnotator.tryDelete(editor)) {
+        if (ZitAnnotator.tryDelete(editor)) {
             return;
         }
         const uri = editor.document.uri;
@@ -1435,51 +1504,52 @@ export class CommandCenter {
         if (!repository) {
             return;
         }
-        const praises = await repository.praise(uri.fsPath as DocumentFsPath);
-        await praise.PraiseAnnotator.create(repository, editor, praises);
-    }
-
-    @command(Inline.Repository)
-    async gitPublish(repository: Repository): Promise<void> {
-        const gitExport = await require('./gitExport');
-
-        if (!this.credentials) {
-            this.credentials = new gitExport.Credentials();
-        }
-        const options = await gitExport.inputExportOptions(
-            this.credentials,
-            repository,
-            this.disposables
+        const annotations = await repository.annotate(
+            uri.fsPath as DocumentFsPath
         );
-        if (options) {
-            await gitExport.exportGit(options, repository);
-        }
+        await ZitAnnotator.create(repository, editor, annotations);
     }
+
     @command(Inline.Repository)
     async gitExport(repository: Repository): Promise<void> {
-        await repository.gitExport();
-    }
-
-    @command()
-    async renderSave(): Promise<void> {
-        await this.previewManager.activePreview?.save();
+        await exportGit(repository);
     }
 
     private async diff(
         repository: Repository,
-        checkin: FossilCheckin,
-        target: FossilHash | FossilSpecialTags | undefined,
+        checkin: ZitCheckin,
+        target: ZitHash | ZitSpecialTags | undefined,
         uri: Uri
     ) {
-        const fromUri = toFossilUri(uri, checkin);
-        switch (target) {
-            case 'parent':
-                target = await repository.getInfo(checkin, 'parent');
-                break;
+        const resolvedCheckin = await repository.getInfo(checkin, 'hash');
+        let fromUri = toZitUri(uri, resolvedCheckin);
+        let fromName = resolvedCheckin.slice(0, 12);
+        let toUri: Uri;
+        let toName: string;
+        if (target === 'parent') {
+            const repoPath = repository.mapFileUriToRepoRelativePath(uri);
+            const details = await repository.getCommitDetails(resolvedCheckin);
+            const status = details.files.find(
+                file => file.path === repoPath
+            )?.status;
+            const parent = await repository.getInfo(resolvedCheckin, 'parent');
+            if (status === ResourceStatus.DELETED) {
+                fromUri = toZitEmptyUri(uri);
+                fromName = 'empty';
+            }
+            toUri =
+                parent && status !== ResourceStatus.ADDED
+                    ? toZitUri(uri, parent)
+                    : toZitEmptyUri(uri);
+            toName = parent?.slice(0, 12) ?? 'empty';
+        } else if (target === undefined) {
+            toUri = uri;
+            toName = 'local';
+        } else {
+            const resolvedTarget = await repository.getInfo(target, 'hash');
+            toUri = toZitUri(uri, resolvedTarget);
+            toName = resolvedTarget.slice(0, 12);
         }
-        const toUri = toFossilUri(uri, target);
-        const fromName = checkin.slice(0, 12);
-        const toName = (target || 'local').slice(0, 12);
         const relativePath = repository.mapFileUriToWorkspaceRelativePath(uri);
         const title = `${relativePath} (${fromName} vs. ${toName})`;
 
@@ -1507,32 +1577,33 @@ export class CommandCenter {
         return repositoryPromise;
     }
 
-    private getSCMResource(uri?: Uri): FossilResource | undefined {
+    private getSCMResource(uri?: Uri): ZitResource | undefined {
         uri = uri || window.activeTextEditor?.document.uri;
-
         if (!uri) {
-            return undefined;
+            return;
         }
-
-        if (uri.scheme === 'fossil') {
-            uri = uri.with({ scheme: 'file' });
-        }
-
-        if (uri.scheme === 'file') {
-            const repository = this.model.getRepository(uri);
-
-            if (!repository) {
-                return undefined;
+        if (uri.scheme === 'zit') {
+            if (!uri.query) {
+                return;
             }
-
-            return (
-                repository.workingGroup.getResource(uri) ||
-                repository.stagingGroup.getResource(uri) ||
-                repository.untrackedGroup.getResource(uri) ||
-                repository.conflictGroup.getResource(uri)
-            );
+            try {
+                uri = Uri.file(fromZitUri(uri).path);
+            } catch {
+                return;
+            }
         }
-        return undefined;
+        if (uri.scheme !== 'file') {
+            return;
+        }
+        const repository = this.model.getRepository(uri);
+        if (!repository) {
+            return;
+        }
+        return (
+            repository.addedGroup.getResource(uri) ||
+            repository.workingGroup.getResource(uri) ||
+            repository.untrackedGroup.getResource(uri)
+        );
     }
 
     dispose(): void {
