@@ -1,7 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { access, appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+    access,
+    appendFile,
+    mkdir,
+    readFile,
+    stat,
+    writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,10 +36,12 @@ function escapeRegExp(value) {
 }
 
 async function requireReadmeImages(root, readme) {
-    const imagePattern =
-        /!\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+    const imagePattern = /!\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
     for (const [, reference] of readme.matchAll(imagePattern)) {
-        if (/^[a-z][a-z\d+.-]*:/i.test(reference) || reference.startsWith('#')) {
+        if (
+            /^[a-z][a-z\d+.-]*:/i.test(reference) ||
+            reference.startsWith('#')
+        ) {
             continue;
         }
 
@@ -52,6 +61,23 @@ async function requireReadmeImages(root, readme) {
     }
 }
 
+const MAX_VSIX_SIZE_BYTES = 5 * 1024 * 1024;
+const FORBIDDEN_PACKAGE_PREFIXES = ['.zig-cache/'];
+
+export function validatePackageContents(includedFiles, vsixSize) {
+    const forbiddenFile = includedFiles.find(file =>
+        FORBIDDEN_PACKAGE_PREFIXES.some(prefix => file.startsWith(prefix))
+    );
+    if (forbiddenFile) {
+        throw new Error(`forbidden package content: ${forbiddenFile}`);
+    }
+    if (vsixSize > MAX_VSIX_SIZE_BYTES) {
+        throw new Error(
+            `VSIX size ${vsixSize} bytes exceeds 5 MiB release limit`
+        );
+    }
+}
+
 export function createReleaseContract(manifest, changelog) {
     if (!manifest || typeof manifest !== 'object') {
         throw new Error('package.json manifest is required');
@@ -66,7 +92,9 @@ export function createReleaseContract(manifest, changelog) {
     requireListingUrl(manifest, 'bugs');
 
     if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-        throw new Error(`package.json version is not a release version: ${version}`);
+        throw new Error(
+            `package.json version is not a release version: ${version}`
+        );
     }
     if (
         !Array.isArray(manifest.activationEvents) ||
@@ -174,7 +202,9 @@ export async function emitGithubOutputs(
         vsix_path: `dist/${contract.vsix}`,
         checksum_path: `dist/${contract.checksum}`,
     };
-    const lines = Object.entries(outputs).map(([key, value]) => `${key}=${value}`);
+    const lines = Object.entries(outputs).map(
+        ([key, value]) => `${key}=${value}`
+    );
     process.stdout.write(`${lines.join('\n')}\n`);
     if (outputFile) {
         await appendFile(outputFile, `${lines.join('\n')}\n`);
@@ -198,11 +228,37 @@ export async function packageRelease(contract, root = projectRoot) {
         shell: process.platform === 'win32',
     });
     if (result.error) {
-        throw new Error(`unable to run locally installed vsce: ${result.error.message}`);
+        throw new Error(
+            `unable to run locally installed vsce: ${result.error.message}`
+        );
     }
     if (result.status !== 0) {
-        throw new Error(`locally installed vsce exited with status ${result.status}`);
+        throw new Error(
+            `locally installed vsce exited with status ${result.status}`
+        );
     }
+
+    const listing = spawnSync(executable, ['ls'], {
+        cwd: root,
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+    });
+    if (listing.error) {
+        throw new Error(
+            `unable to inspect locally packaged files: ${listing.error.message}`
+        );
+    }
+    if (listing.status !== 0) {
+        throw new Error(
+            `local package inspection exited with status ${listing.status}`
+        );
+    }
+    const includedFiles = listing.stdout
+        .split(/\r?\n/)
+        .map(file => file.trim())
+        .filter(Boolean);
+    const { size: vsixSize } = await stat(vsixPath);
+    validatePackageContents(includedFiles, vsixSize);
 
     const writtenChecksum = await writeChecksum(vsixPath);
     if (writtenChecksum !== checksumPath) {
@@ -240,7 +296,7 @@ async function main(args = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
-    main().catch((error) => {
+    main().catch(error => {
         console.error(error instanceof Error ? error.message : error);
         process.exitCode = 1;
     });
