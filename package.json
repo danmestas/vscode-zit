@@ -7,7 +7,16 @@
         "color": "#999999",
         "theme": "dark"
     },
-    "version": "0.7.6",
+    "version": "0.8.0",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/danmestas/vscode-zit.git"
+    },
+    "homepage": "https://github.com/danmestas/vscode-zit#readme",
+    "bugs": {
+        "url": "https://github.com/danmestas/vscode-zit/issues"
+    },
     "engines": {
         "vscode": "^1.125.0"
     },
@@ -22,7 +31,7 @@
         "Other"
     ],
     "activationEvents": [
-        "*"
+        "onStartupFinished"
     ],
     "main": "./out/main",
     "contributes": {
@@ -1140,8 +1149,12 @@
         "vscode:prepublish": "npm run bundle -- --minify",
         "bundle": "node ./esbuild.config.js",
         "compile": "tsc -p ./",
-        "package": "vsce package --allow-star-activation --allow-missing-repository",
-        "deploy": "vsce publish",
+        "package": "npm run release:package",
+        "release:contract": "node ./scripts/release-contract.mjs contract",
+        "release:test": "node --test ./scripts/release-contract.test.mjs",
+        "release:package": "node ./scripts/release-contract.mjs package",
+        "release:assert-tag": "node ./scripts/release-contract.mjs assert-tag",
+        "release:verify": "node ./scripts/release-contract.mjs verify",
         "pretest": "npm run compile",
         "test": "node ./out/test/runTest.js",
         "coverage": "node ./node_modules/c8/bin/c8.js --reporter lcov --exclude [] --check-coverage npm run test",
@@ -1167,6 +1180,7 @@
         "eslint": "^10.8.1",
         "eslint-plugin-prettier": "~5.5.6",
         "mocha": "~11.8.0",
+        "ovsx": "1.1.1",
         "prettier": "~3.9.6",
         "sinon": "~22.1.0",
         "typescript": "^5.9.3",

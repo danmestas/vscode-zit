@@ -1,10 +1,47 @@
 # Zit source control for Visual Studio Code
 
-This extension integrates [Zit](https://fossil.craftdesign.group/zit/home) repositories with Visual Studio Code.
+Work with [Zit](https://fossil.craftdesign.group/zit/home) repositories without leaving your editor. The extension brings Zit working-tree changes, history, comparisons, and repository operations into Visual Studio Code.
 
-## Requirements
+## Features
+
+- Review tracked and untracked changes in the Source Control view, then add, forget, revert, clean, or commit without a staging area.
+- Follow project or file history in the Zit Timeline, inspect changed files, compare refs in a multi-diff editor, and annotate committed lines with Praise.
+- Initialize, clone, and open repositories; manage branches, symbolic tags, and stashes; and run pull, push, sync, and Git export workflows.
+- Configure the Zit executable, automatic refresh, background sync, commit author, and command arguments for each environment.
+
+## Screenshots
+
+![Zit Source Control view showing tracked and untracked working-tree changes](images/source-control.png)
+
+*Review working-tree changes and run Zit actions from the Source Control view.*
+
+![Zit Timeline showing project and file history](images/timeline.png)
+
+*Browse bounded project or file history and open a check-in for inspection.*
+
+![Zit comparison editor showing changes between two refs](images/compare.png)
+
+*Compare branches, symbolic tags, or check-ins in a multi-diff editor.*
+
+## Installation
+
+### Install Zit
 
 Install a current `zit` executable and make it available on `PATH`, or set `zit.path` to its absolute path. Official binaries and source archives are available from the [Zit download page](https://fossil.craftdesign.group/zit/uv/download.html).
+
+> **Supported Zit binaries:** Official prebuilt binaries are available for macOS ARM64, Linux x86-64, and Linux ARM64. There is currently no official Windows binary. The extension requires a working `zit` executable, whether installed from an official binary or built from source.
+
+### Install the extension
+
+When a release is listed in Open VSX, open your editor's Extensions view, search for `Zit` or the extension ID `danmestas.zit`, and select **Install**. A listing may not be available until the first public release is published.
+
+To install a released VSIX manually, download `zit-<version>.vsix` from [GitHub Releases](https://github.com/danmestas/vscode-zit/releases), then run **Extensions: Install from VSIX...** from the Command Palette and select the downloaded file. From a terminal, Visual Studio Code users can instead run:
+
+```sh
+code --install-extension ./zit-<version>.vsix
+```
+
+### Checkout discovery
 
 The extension discovers a checkout by walking upward from each workspace folder until it finds the regular `.zit-checkout` file. A checkout initialized in its own repository also has a `.zit` store; a detached worktree can use a store elsewhere and therefore has no local `.zit`.
 

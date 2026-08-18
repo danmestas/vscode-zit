@@ -13,6 +13,7 @@ coverage/
 docs/
 node_modules
 src/
+scripts/
 pikchr/test/*
 pikchr/*.py
 .sesh/
