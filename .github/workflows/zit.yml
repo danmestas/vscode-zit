@@ -57,6 +57,9 @@ jobs:
           "$RUNNER_TEMP/zit-bootstrap/zit" clone --once \
             https://fossil.craftdesign.group/zit \
             "$RUNNER_TEMP/zit-source"
+          cd "$RUNNER_TEMP/zit-source"
+          "$RUNNER_TEMP/zit-bootstrap/zit" open
+          test -f build.zig
 
       - name: Set up Zig 0.16
         uses: mlugg/setup-zig@v2
