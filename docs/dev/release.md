@@ -25,11 +25,11 @@ The repository owner performs these one-time steps:
 2. Generate an Open VSX access token.
 3. From a locked checkout, create the permanent namespace:
 
-   ```sh
-   npm ci
-   export OVSX_PAT='<token>'
-   ./node_modules/.bin/ovsx create-namespace danmestas -p "$OVSX_PAT"
-   ```
+    ```sh
+    npm ci
+    export OVSX_PAT='<token>'
+    ./node_modules/.bin/ovsx create-namespace danmestas -p "$OVSX_PAT"
+    ```
 
 4. In the GitHub repository settings, create an environment named
    `open-vsx`. Add required reviewers so publication remains an explicit
@@ -46,22 +46,26 @@ would change the extension ID rather than rename the existing listing.
 2. Add a matching `## <version> - YYYY-MM-DD` heading to `CHANGELOG.md`.
 3. Confirm the public listing metadata and explicit activation event with:
 
-   ```sh
-   npm ci
-   npm run release:test
-   npm run release:contract
-   ```
+    ```sh
+    npm ci
+    npm run release:test
+    npm run release:contract
+    ```
 
 4. Run the same lint, coverage, grammar, Zit-build, and packaging gates as CI.
    The packaging gate is:
 
-   ```sh
-   rm -rf out
-   npm run release:package
-   ```
+    ```sh
+    rm -rf out
+    npm run release:package
+    ```
 
-   It creates only `dist/zit-<version>.vsix` and
-   `dist/zit-<version>.vsix.sha256`.
+    It creates only `dist/zit-<version>.vsix` and
+    `dist/zit-<version>.vsix.sha256`.
+    Packaging fails if `.zig-cache` content is visible to `vsce` or the VSIX
+    exceeds 5 MiB. Investigate the leaked/generated content instead of raising
+    that limit.
+
 5. Install that VSIX in a clean Extension Development Host and smoke-test
    repository discovery, status groups, add, commit, historical diff, update,
    merge diagnostics, branch/tag/stash, sync, Git export, and missing-binary
@@ -82,10 +86,10 @@ would change the extension ID rather than rename the existing listing.
 6. Confirm the release contains both canonical assets before considering it
    promotable:
 
-   ```text
-   zit-<version>.vsix
-   zit-<version>.vsix.sha256
-   ```
+    ```text
+    zit-<version>.vsix
+    zit-<version>.vsix.sha256
+    ```
 
 ## Promote to Open VSX
 

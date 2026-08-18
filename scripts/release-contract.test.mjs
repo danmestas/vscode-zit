@@ -8,6 +8,7 @@ import {
     assertReleaseTag,
     createReleaseContract,
     readReleaseContract,
+    validatePackageContents,
     verifyChecksum,
     writeChecksum,
 } from './release-contract.mjs';
@@ -69,10 +70,7 @@ test('rejects wildcard activation and an unversioned changelog', () => {
 test('requires the release tag to match the packaged version', () => {
     const contract = createReleaseContract(readyManifest, changelog);
     assert.doesNotThrow(() => assertReleaseTag(contract, 'v0.8.0'));
-    assert.throws(
-        () => assertReleaseTag(contract, 'v0.8.1'),
-        /does not match/
-    );
+    assert.throws(() => assertReleaseTag(contract, 'v0.8.1'), /does not match/);
 });
 
 test('reads the repository changelog using its canonical filename', async () => {
@@ -121,6 +119,27 @@ test('rejects missing local README images', async () => {
     }
 });
 
+test('rejects cache-contaminated or oversized VSIX packages', () => {
+    assert.doesNotThrow(() =>
+        validatePackageContents(
+            ['out/main.js', 'images/source-control.png'],
+            400_000
+        )
+    );
+    assert.throws(
+        () =>
+            validatePackageContents(
+                ['out/main.js', '.zig-cache/o/compiler/zit_zcu.o'],
+                400_000
+            ),
+        /forbidden package content/
+    );
+    assert.throws(
+        () => validatePackageContents(['out/main.js'], 5 * 1024 * 1024 + 1),
+        /exceeds 5 MiB/
+    );
+});
+
 test('writes and verifies a checksum for the exact VSIX bytes', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'zit-release-'));
     const vsix = path.join(directory, 'zit-0.8.0.vsix');
@@ -128,10 +147,7 @@ test('writes and verifies a checksum for the exact VSIX bytes', async () => {
         await writeFile(vsix, 'immutable-vsix-bytes');
         const checksumPath = await writeChecksum(vsix);
         const checksum = await readFile(checksumPath, 'utf8');
-        assert.match(
-            checksum,
-            /^[a-f0-9]{64}  zit-0\.8\.0\.vsix\n$/
-        );
+        assert.match(checksum, /^[a-f0-9]{64}  zit-0\.8\.0\.vsix\n$/);
         await assert.doesNotReject(() => verifyChecksum(vsix));
         await writeFile(vsix, 'different-bytes');
         await assert.rejects(() => verifyChecksum(vsix), /checksum mismatch/);

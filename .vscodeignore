@@ -1,3 +1,4 @@
+.zig-cache/
 .github/
 .mocharc.js
 esbuild.config.js
