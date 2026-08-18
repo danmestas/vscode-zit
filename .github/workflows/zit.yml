@@ -8,14 +8,23 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   main:
     name: Run Zit Tests
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      contents: write
+      contents: read
       security-events: write
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      tag: ${{ steps.package.outputs.tag }}
+      vsix: ${{ steps.package.outputs.vsix }}
+      checksum: ${{ steps.package.outputs.checksum }}
+      artifact: zit-${{ steps.package.outputs.version }}-vsix
     steps:
       - name: Checkout extension
         uses: actions/checkout@v7
@@ -29,13 +38,16 @@ jobs:
       - name: Install extension dependencies
         run: npm ci
 
+      - name: Test release contract
+        run: npm run release:test
+
       - name: Run ESLint
         run: npm run lint --
           --format @microsoft/eslint-formatter-sarif
           --output-file eslint-results.sarif
-        continue-on-error: true
 
       - name: Upload analysis results to GitHub
+        if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: eslint-results.sarif
@@ -90,11 +102,50 @@ jobs:
       - name: Run Pikchr grammar tests
         run: npm run grammar-test
 
-      - name: Package
-        run: rm -rf out && npm run package
-
-      - name: Release
-        uses: softprops/action-gh-release@v3
+      - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run release:assert-tag -- "$GITHUB_REF_NAME"
+
+      - name: Package checksummed VSIX
+        id: package
+        run: |
+          rm -rf out
+          npm run release:package
+
+      - name: Verify checksummed VSIX
+        run: npm run release:verify -- "${{ steps.package.outputs.vsix_path }}"
+
+      - name: Upload checksummed VSIX
+        uses: actions/upload-artifact@v6
         with:
-          files: zit-*.*.*.vsix
+          name: zit-${{ steps.package.outputs.version }}-vsix
+          path: |
+            ${{ steps.package.outputs.vsix_path }}
+            ${{ steps.package.outputs.checksum_path }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download checksummed VSIX
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.main.outputs.artifact }}
+          path: dist
+
+      - name: Verify downloaded artifact bytes
+        working-directory: dist
+        run: sha256sum --check "${{ needs.main.outputs.checksum }}"
+
+      - name: Attach tested artifacts to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/${{ needs.main.outputs.vsix }}
+            dist/${{ needs.main.outputs.checksum }}
+          fail_on_unmatched_files: true

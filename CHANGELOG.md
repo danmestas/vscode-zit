@@ -2,7 +2,7 @@
 
 All notable changes to the Zit extension are documented here.
 
-## Unreleased
+## 0.8.0 - 2026-08-18
 
 ### Changed
 
