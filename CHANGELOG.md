@@ -2,6 +2,13 @@
 
 All notable changes to the Zit extension are documented here.
 
+## 0.8.1 - 2026-08-22
+
+### Changed
+
+- Added a complete visual feature tour to the README and Open VSX listing.
+- Simplified Praise inline annotations to show the full author and a weekday-aware date, while retaining complete check-in details on hover.
+
 ## 0.8.0 - 2026-08-18
 
 ### Changed

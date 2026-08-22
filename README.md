@@ -43,9 +43,9 @@ Once installed, the extension keeps everyday Zit work inside the editor while ma
 
 #### Trace a line
 
-![Zit Praise annotations showing check-in details beside committed lines](images/praise.png)
+![Zit Praise inline annotations showing author and weekday-aware date beside committed lines](images/praise.png)
 
-*Annotate committed lines with their check-in, date, and author, with full details on hover.*
+*Annotate committed lines with their author and weekday-aware date, with full check-in details on hover.*
 
 ### Shape your work
 
@@ -138,7 +138,7 @@ Use **Update** to move the checkout to another check-in, branch, or tag. Merge a
 
 The Explorer includes a **Zit Timeline** view. It follows the active in-repository file, can switch back to project history, loads history in bounded pages, and keeps file scope while historical revisions are open. Select a file-history entry to compare that check-in with its parent; select a project-history entry to inspect the commit and its changed files. Use **Compare Refs...** from the Command Palette, the Source Control **Timeline** menu, or a timeline check-in's **Compare with...** action to compare any branch, symbolic tag, or check-in in one multi-diff editor.
 
-Run **Zit: Praise** from the Command Palette to show each committed line’s check-in, date, and author in the editor margin. Hover a line for the commit message and full metadata; run **Praise** again to hide the annotations.
+Run **Zit: Praise** from the Command Palette to show each committed line’s author and weekday-aware date in the editor margin. Hover a line for the commit message and full metadata; run **Praise** again to hide the annotations.
 
 ### Branches, tags, stashes, and remotes
 
