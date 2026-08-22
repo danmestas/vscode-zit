@@ -47,10 +47,13 @@ function PraiseSuite(this: Suite) {
     test('Formats the visible line author', () => {
         const annotation: Annotation = [
             'a'.repeat(64) as ZitHash,
-            '2026-08-15',
-            'u1' as ZitUsername,
+            '2026-08-22',
+            'Zit Demo' as ZitUsername,
         ];
-        assert.match(renderPraiseLine(annotation), /u1$/);
+        assert.equal(
+            renderPraiseLine(annotation),
+            'Zit Demo  Saturday, 2026-08-22'
+        );
     });
 
     suite('Praise file', () => {

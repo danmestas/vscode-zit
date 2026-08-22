@@ -45,13 +45,18 @@ const annotationHighlight = window.createTextEditorDecorationType({
     },
 });
 
-const nbsp = ' ';
+const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    timeZone: 'UTC',
+});
 
 export function renderPraiseLine(annotation: Annotation): string {
-    const checkin = annotation[0].slice(0, 8) || nbsp.repeat(8);
-    const date = annotation[1] || nbsp.repeat(10);
-    const username = annotation[2].slice(-13);
-    return `${checkin} ${date}${nbsp.repeat(14 - username.length)}${username}`;
+    const date = annotation[1];
+    if (!date) {
+        return annotation[2];
+    }
+    const weekday = weekdayFormatter.format(new Date(`${date}T00:00:00Z`));
+    return `${annotation[2]}  ${weekday}, ${date}`;
 }
 
 export class ZitAnnotator {
