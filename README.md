@@ -9,19 +9,83 @@ Work with [Zit](https://fossil.craftdesign.group/zit/home) repositories without 
 - Initialize, clone, and open repositories; manage branches, symbolic tags, and stashes; and run pull, push, sync, and Git export workflows.
 - Configure the Zit executable, automatic refresh, background sync, commit author, and command arguments for each environment.
 
-## Screenshots
+## Feature tour
+
+Once installed, the extension keeps everyday Zit work inside the editor while making each repository-changing action clear.
+
+### Start and review
+
+#### Create or open a repository
+
+![Zit repository setup actions for initializing, cloning, and opening a checkout](images/repository-setup.png)
+
+*Initialize, clone, or open a repository, then land in a checkout ready to work.*
+
+#### See your working tree
 
 ![Zit Source Control view showing tracked and untracked working-tree changes](images/source-control.png)
 
-*Review working-tree changes and run Zit actions from the Source Control view.*
+*Review tracked and untracked changes together, then inspect or act on the working tree without a staging step.*
+
+### Understand the repository
+
+#### Follow history
 
 ![Zit Timeline showing project and file history](images/timeline.png)
 
-*Browse bounded project or file history and open a check-in for inspection.*
+*Follow project history or the active file's history, then open a check-in to see what changed.*
+
+#### Compare refs
 
 ![Zit comparison editor showing changes between two refs](images/compare.png)
 
-*Compare branches, symbolic tags, or check-ins in a multi-diff editor.*
+*Compare branches, symbolic tags, or check-ins in one multi-diff editor.*
+
+#### Trace a line
+
+![Zit Praise annotations showing check-in details beside committed lines](images/praise.png)
+
+*Annotate committed lines with their check-in, date, and author, with full details on hover.*
+
+### Shape your work
+
+#### Move between branches
+
+![Zit branch picker for creating and switching branches](images/branches.png)
+
+*Create a branch or switch the checkout to another branch from a focused picker.*
+
+#### Mark or pause work
+
+![Zit symbolic tag and stash actions](images/tags-stashes.png)
+
+*Manage symbolic tags and stashes without leaving the editor; Stash Push is local, and apply is fail-closed.*
+
+#### Merge a branch
+
+![Zit merge picker for selecting a branch](images/merge.png)
+
+*Merge a branch into the working tree and get conflicts surfaced before you continue.*
+
+#### Work across checkouts
+
+![Zit worktree picker showing registered checkouts](images/worktrees.png)
+
+*List registered worktrees, open one in the current or a new window, or create another checkout.*
+
+### Connect and hand off
+
+#### Sync with a remote
+
+![Zit remote and synchronization actions](images/remotes-sync.png)
+
+*Review or change the saved remote, then pull, push, or sync from the same focused flow.*
+
+#### Export to Git
+
+![Zit Git export workflow](images/git-export.png)
+
+*Git export is explicit: choose whether it runs, then select the destination Git directory.*
 
 ## Installation
 
